@@ -1,0 +1,402 @@
+package template
+
+import (
+	_ "embed"
+	"encoding/json"
+	"fmt"
+	"io/fs"
+	"os"
+	"path/filepath"
+	"regexp"
+	"strconv"
+	"strings"
+	"text/template"
+	"text/template/parse"
+)
+
+func pp(prefix string, v ...any) {
+	b, _ := json.MarshalIndent(v, "", "  ")
+	_ = b
+	_ = prefix
+	// fmt.Printf("%s:\t%s\n", prefix, b)
+}
+
+func pp2(prefix string, v ...any) {
+	b, _ := json.MarshalIndent(v, "", "  ")
+	_, _ = b, prefix
+	// fmt.Printf("%s:\t%s\n", prefix, b)
+}
+
+const paramLabel string = "__param__"
+
+func parseNode(p parse.Node, prefix string, onNodeFound func(sf StructField, isComment bool)) {
+	// fmt.Println("got node", prefix, p.String(), p.Type())
+	switch node := p.(type) {
+	case *parse.IdentifierNode:
+		{
+			onNodeFound(toStructField(node.String(), "any"), false)
+			// onNodeFound(node.String(), "any", false)
+			pp(fmt.Sprintf("identifier node (%s)", prefix), node.String())
+		}
+
+	// CASE: .Variable
+	case *parse.FieldNode:
+		{
+			for _, v := range node.Ident {
+				onNodeFound(toStructField(v, "any"), false)
+			}
+			pp(fmt.Sprintf("field node (%s)", prefix), node.Type(), node.String())
+		}
+
+	// CASE: {{.Variable}}
+	case *parse.ActionNode:
+		{
+			pp2(fmt.Sprintf("action node (%s)", prefix), node.Pipe.String())
+			for _, c := range node.Pipe.Cmds {
+				pp2("cmds", c.String())
+
+				if len(c.Args) >= 3 && c.Args[0].String() == paramLabel {
+					// INFO: it is our param comment
+					varName, err := strconv.Unquote(c.Args[1].String())
+					if err != nil {
+						continue
+					}
+
+					varType, err := strconv.Unquote(c.Args[2].String())
+					if err != nil {
+						continue
+					}
+
+					onNodeFound(toStructField(varName, varType), true)
+					continue
+				}
+
+				for idx, ci := range c.Args {
+					pp2(fmt.Sprintf("cmds[%d]", idx), ci.Type(), ci.String())
+					parseNode(ci, fmt.Sprintf("cmds[%d]", idx), onNodeFound)
+				}
+			}
+			// for _, d := range node.Pipe.Decl {
+			// 	pp("decl", d.String())
+			// }
+			// *result = append(*result, node.Pipe.String())
+			// return
+		}
+	case *parse.IfNode:
+		{
+			pp(fmt.Sprintf("if node (%s)", prefix), node.String())
+
+			pp("if node pipe", node.Pipe.Cmds)
+			for i := range node.Pipe.Cmds {
+				parseNode(node.Pipe.Cmds[i], prefix, onNodeFound)
+			}
+
+			parseNode(node.List, "if", onNodeFound)
+			parseNode(node.ElseList, "else", onNodeFound)
+		}
+	case *parse.ListNode:
+		pp(fmt.Sprintf("list node (%s)", prefix), node.String())
+		for i := range node.Nodes {
+			parseNode(node.Nodes[i], fmt.Sprintf("list [%d]", i), onNodeFound)
+		}
+
+	case *parse.CommandNode:
+		fmt.Println("command-node", node.String())
+		for i := range node.Args {
+			parseNode(node.Args[i], fmt.Sprintf("list [%d]", i), onNodeFound)
+		}
+
+	case *parse.CommentNode:
+		pp(fmt.Sprintf("comment node (%s)", prefix), node.Text)
+	}
+}
+
+func structFromTemplate(structName string, t *template.Template) (Struct, error) {
+	var fields []StructField
+	commentsMap := make(map[string]string)
+
+	fieldsMap := make(map[string]int)
+
+	onVarFound := func(sf StructField, isFromComment bool) {
+		if isFromComment {
+			if _, ok := commentsMap[sf.Name]; !ok {
+				commentsMap[sf.Name] = sf.Type
+			}
+			return
+		}
+
+		if _, ok := fieldsMap[sf.Name]; !ok {
+			fields = append(fields, sf)
+			fieldsMap[sf.Name] = len(fields) - 1
+		}
+	}
+
+	for _, n := range t.Root.Nodes {
+		parseNode(n, "", onVarFound)
+	}
+
+	var imports []string
+
+	// fmt.Printf("fields: %+v\n", fields)
+	// fmt.Printf("commentsMap: %+v\n", commentsMap)
+
+	for i := range fields {
+		if commentType, ok := commentsMap[fields[i].Name]; ok {
+			if idx := strings.LastIndex(commentType, "."); idx != -1 {
+				pkg := commentType[:idx]
+				imports = append(imports, pkg)
+				fields[i].Package = &pkg
+				fields[i].Type = fmt.Sprintf("%s.%s", filepath.Base(pkg), commentType[idx+1:])
+				continue
+			}
+			fields[i].Type = commentType
+		}
+	}
+
+	return Struct{
+		Name:    structName,
+		Fields:  fields,
+		Imports: imports,
+	}, nil
+}
+
+var re = regexp.MustCompile(`{{-?\s*/\*\s* @param \s*(.*) \s*(.*) ()\*/}}`)
+
+func preProcess(tmpl string) string {
+	// matches := re.FindAllStringSubmatch(tmpl, -1)
+	// for _, m := range matches {
+	// 	fmt.Printf("item (%s, %s)\n", m[1], m[2])
+	// }
+
+	return re.ReplaceAllString(tmpl, fmt.Sprintf(`{{- %s "$1" "$2" -}}`, paramLabel))
+}
+
+func generateStructs(tmpl string) (imports []string, structs []Struct, err error) {
+	// Parse the template
+	t := template.New("YourStructName")
+	t.Funcs(template.FuncMap{
+		paramLabel: func(key, value string) string {
+			return "/* comment */"
+		},
+	})
+
+	imports = append(imports,
+		"github.com/go-playground/validator/v10",
+		"io",
+		"encoding/json",
+	)
+
+	t, err = t.Parse(preProcess(tmpl))
+	if err != nil {
+		return nil, nil, err
+	}
+
+	result := make([]Struct, 0, len(t.Templates()))
+	for _, v := range t.Templates() {
+		if v.Name() == "YourStructName" && len(t.Templates()) > 1 {
+			continue
+		}
+
+		sname := generateStructName(v.Name())
+
+		s, err := structFromTemplate(sname, v)
+		if err != nil {
+			return nil, nil, err
+		}
+		s.FromTemplate = v.Name()
+
+		result = append(result, s)
+		imports = append(imports, s.Imports...)
+	}
+
+	return imports, result, nil
+}
+
+// type Option struct {
+// 	TemplateType string
+// 	Input        io.Reader
+// 	Output       io.Writer
+// 	OutPkg       string
+// 	OutputDir    *string
+// }
+//
+// func Parse(opt Option) error {
+// 	if opt.Input == nil {
+// 		return fmt.Errorf("must specify option.Input")
+// 	}
+//
+// 	if opt.OutPkg == "" {
+// 		return fmt.Errorf("must specify option.OutPkg")
+// 	}
+//
+// 	if opt.Output == nil {
+// 		return fmt.Errorf("must specify option.Output")
+// 	}
+//
+// 	b, err := io.ReadAll(opt.Input)
+// 	if err != nil {
+// 		return err
+// 	}
+//
+// 	imports, structs, err := generateStructs(string(b))
+// 	if err != nil {
+// 		return err
+// 	}
+//
+// 	if opt.Output == nil {
+// 		opt.Output = os.Stdout
+// 	}
+//
+// 	if opt.OutputDir != nil {
+// 		printPackageLevelFile(*opt.OutputDir, opt.OutPkg, "html")
+// 	}
+//
+// 	if err := printOutput(opt.Output, opt.OutPkg, imports, structs); err != nil {
+// 		return err
+// 	}
+//
+// 	return nil
+// }
+
+//go:embed printer_template.go.tpl
+var outputTemplate string
+
+//go:embed generated_template.go.tpl
+var outputPkgTemplate string
+
+type Parser struct {
+	templateImport string
+
+	outputFileTmpl *template.Template
+	outputPkgTmpl  *template.Template
+}
+
+func (p *Parser) ParseDir(inputDir string, patterns []string, outputDir string, outputPkg string) error {
+	if patterns == nil {
+		patterns = []string{"*.html", "**/*.html"}
+	}
+
+	dirfs := os.DirFS(inputDir)
+
+	// de, err := fs.ReadDir(dirfs, ".")
+	// if err != nil {
+	// 	return err
+	// }
+	//
+	// fmt.Printf("ls: %#v (%d)", de, len(de))
+
+	var listings []string
+
+	for _, pattern := range patterns {
+		list, err := fs.Glob(dirfs, pattern)
+		if err != nil {
+			panic(err)
+		}
+		listings = append(listings, list...)
+	}
+
+	if err := os.MkdirAll(outputDir, 0o766); err != nil {
+		panic(err)
+	}
+
+	if len(listings) == 0 {
+		panic(fmt.Errorf("template: pattern matches no files: %#q", patterns))
+	}
+
+	for _, item := range listings {
+		input, err := os.ReadFile(filepath.Join(inputDir, item))
+		if err != nil {
+			return err
+		}
+
+		fmt.Println(filepath.Join(inputDir, item))
+
+		base := filepath.Base(item)
+		parseFuncName := "parse" + toFieldName(base[:len(base)-len(filepath.Ext(base))])
+
+		outFile := filepath.Join(outputDir, fmt.Sprintf("%s_generated.go", filepath.Base(item)))
+
+		if err := p.parse(string(input), parseFuncName, &outFile, outputPkg); err != nil {
+			return err
+		}
+	}
+
+	return nil
+}
+
+func (p *Parser) Parse(input string, outputFile *string, outputPkg string) error {
+	parseFuncName := "parseStdout"
+	return p.parse(input, parseFuncName, outputFile, outputPkg)
+}
+
+func (p *Parser) parse(input string, parseFuncName string, outputFile *string, outputPkg string) error {
+	imports, structs, err := generateStructs(input)
+	if err != nil {
+		return err
+	}
+
+	imports = append(imports, p.templateImport)
+	out := os.Stdout
+
+	if outputFile != nil {
+		out, err = os.Create(*outputFile)
+		if err != nil {
+			return err
+		}
+
+		outDir := filepath.Dir(*outputFile)
+		if err := p.PrintOutputPkgFile(outDir, outputPkg); err != nil {
+			return err
+		}
+	}
+
+	return p.PrintOutputFile(out, printOutputArgs{
+		Package:       outputPkg,
+		Imports:       imports,
+		Structs:       structs,
+		ParseFuncName: parseFuncName,
+		InputTemplate: input,
+	})
+}
+
+type templateType string
+
+const (
+	Html templateType = "html"
+	Text templateType = "text"
+)
+
+func NewParser(ttype templateType) (*Parser, error) {
+	funcs := template.FuncMap{
+		"indent": func(indent int, str string) string {
+			return strings.Repeat(" ", indent) + str
+		},
+		"trim": func(str string) string {
+			return strings.TrimSpace(str)
+		},
+		"quote": func(str string) string {
+			return strconv.Quote(str)
+		},
+
+		"squote": func(str string) string {
+			str = strconv.Quote(str)
+			return "'" + str[1:len(str)-1] + "'"
+		},
+	}
+
+	t, err := template.New("parse").Funcs(funcs).Parse(outputTemplate)
+	if err != nil {
+		return nil, err
+	}
+
+	outputPkgTmpl, err := template.New("parse").Funcs(funcs).Parse(outputPkgTemplate)
+	if err != nil {
+		return nil, err
+	}
+
+	return &Parser{
+		templateImport: fmt.Sprintf("%s/template", ttype),
+		outputFileTmpl: t,
+		outputPkgTmpl:  outputPkgTmpl,
+	}, nil
+}
