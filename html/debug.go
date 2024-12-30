@@ -7,18 +7,6 @@ import (
 	"golang.org/x/net/html"
 )
 
-func getChildren(n *html.Node) []*html.Node {
-	var result []*html.Node
-	for c := n.FirstChild; c != nil; c = c.NextSibling {
-		if strings.TrimSpace(c.Data) == "" {
-			// INFO: omiting empty node
-			continue
-		}
-		result = append(result, c)
-	}
-
-	return result
-}
 
 func nodePrinter(n *html.Node, withChildren bool) (string, []string) {
 	if n == nil {

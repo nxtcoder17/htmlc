@@ -171,29 +171,44 @@ func preProcess(tmpl string) string {
 	return re.ReplaceAllString(tmpl, fmt.Sprintf(`{{- %s "$1" "$2" -}}`, paramLabel))
 }
 
-func generateStructs(tmpl string) (imports []string, structs []Struct, err error) {
+func parseTemplateString(input string, defaultStructName string) (*template.Template, string, error) {
 	// Parse the template
-	t := template.New("YourStructName")
+	t := template.New("t:parser")
 	t.Funcs(template.FuncMap{
 		paramLabel: func(key, value string) string {
 			return "/* comment */"
 		},
 	})
 
+	t, err := t.Parse(preProcess(input))
+	if err != nil {
+		return nil, "", nil
+	}
+
+	if len(t.Templates()) == 1 {
+		fmt.Println("HERE................")
+		return parseTemplateString(strings.Join([]string{
+			fmt.Sprintf(`{{- define "%s" }}`, defaultStructName),
+			input,
+			`{{- end }}`,
+		}, "\n"), defaultStructName)
+	}
+
+	return t, input, nil
+}
+
+func generateStructs(tmpl string, defaultStructName string) (fixedTemplate string, imports []string, structs []Struct, err error) {
 	imports = append(imports,
 		"github.com/go-playground/validator/v10",
 		"io",
 		"encoding/json",
 	)
 
-	t, err = t.Parse(preProcess(tmpl))
-	if err != nil {
-		return nil, nil, err
-	}
+	t, tmpl, err := parseTemplateString(tmpl, defaultStructName)
 
 	result := make([]Struct, 0, len(t.Templates()))
 	for _, v := range t.Templates() {
-		if v.Name() == "YourStructName" && len(t.Templates()) > 1 {
+		if v.Name() == "t:parser" && len(t.Templates()) > 1 {
 			continue
 		}
 
@@ -201,7 +216,7 @@ func generateStructs(tmpl string) (imports []string, structs []Struct, err error
 
 		s, err := structFromTemplate(sname, v)
 		if err != nil {
-			return nil, nil, err
+			return "", nil, nil, err
 		}
 		s.FromTemplate = v.Name()
 
@@ -209,7 +224,7 @@ func generateStructs(tmpl string) (imports []string, structs []Struct, err error
 		imports = append(imports, s.Imports...)
 	}
 
-	return imports, result, nil
+	return tmpl, imports, result, nil
 }
 
 // type Option struct {
@@ -312,11 +327,12 @@ func (p *Parser) ParseDir(inputDir string, patterns []string, outputDir string, 
 		fmt.Println(filepath.Join(inputDir, item))
 
 		base := filepath.Base(item)
-		parseFuncName := "parse" + toFieldName(base[:len(base)-len(filepath.Ext(base))])
+		base = toFieldName(base[:len(base)-len(filepath.Ext(base))])
+		parseFuncName := "parse" + base
 
 		outFile := filepath.Join(outputDir, fmt.Sprintf("%s_generated.go", filepath.Base(item)))
 
-		if err := p.parse(string(input), parseFuncName, &outFile, outputPkg); err != nil {
+		if err := p.parse(string(input), base, parseFuncName, &outFile, outputPkg); err != nil {
 			return err
 		}
 	}
@@ -326,11 +342,11 @@ func (p *Parser) ParseDir(inputDir string, patterns []string, outputDir string, 
 
 func (p *Parser) Parse(input string, outputFile *string, outputPkg string) error {
 	parseFuncName := "parseStdout"
-	return p.parse(input, parseFuncName, outputFile, outputPkg)
+	return p.parse(input, "YourStdoutStruct", parseFuncName, outputFile, outputPkg)
 }
 
-func (p *Parser) parse(input string, parseFuncName string, outputFile *string, outputPkg string) error {
-	imports, structs, err := generateStructs(input)
+func (p *Parser) parse(input string, structName string, parseFuncName string, outputFile *string, outputPkg string) error {
+	tmpl, imports, structs, err := generateStructs(input, structName)
 	if err != nil {
 		return err
 	}
@@ -355,18 +371,22 @@ func (p *Parser) parse(input string, parseFuncName string, outputFile *string, o
 		Imports:       imports,
 		Structs:       structs,
 		ParseFuncName: parseFuncName,
-		InputTemplate: input,
+		InputTemplate: tmpl,
 	})
 }
 
-type templateType string
+type TemplateType string
 
 const (
-	Html templateType = "html"
-	Text templateType = "text"
+	Html TemplateType = "html"
+	Text TemplateType = "text"
 )
 
-func NewParser(ttype templateType) (*Parser, error) {
+func NewParser(ttype TemplateType) (*Parser, error) {
+	if ttype != Html && ttype != Text {
+		return nil, fmt.Errorf("unsupported template type (%s), only text, and html are supported", ttype)
+	}
+
 	funcs := template.FuncMap{
 		"indent": func(indent int, str string) string {
 			return strings.Repeat(" ", indent) + str

@@ -9,6 +9,7 @@ import (
 
 	"github.com/nxtcoder17/go-template/pkg/log"
 	"golang.org/x/net/html"
+	"golang.org/x/net/html/atom"
 )
 
 var logger *slog.Logger
@@ -16,52 +17,6 @@ var logger *slog.Logger
 func init() {
 	l := log.New(log.ShowCallerInfo())
 	logger = l.Slog()
-}
-
-func copyChildren(oldNode, newNode *html.Node) {
-	logger.Debug("HERE", "oldnode", oldNode.Data, "new node", newNode.Data)
-	for c := oldNode.FirstChild; c != nil; c = c.NextSibling {
-		logger.Debug("HERE", "oldnode.FirstChild", c == nil, "new node", newNode == nil)
-		nc := html.Node{
-			FirstChild: c.FirstChild,
-			LastChild:  c.LastChild,
-			Type:       c.Type,
-			DataAtom:   c.DataAtom,
-			Data:       c.Data,
-			Namespace:  c.Namespace,
-			Attr:       c.Attr,
-		}
-
-		newNode.AppendChild(&nc)
-	}
-}
-
-// replaceNode replaces a node in the DOM
-func replaceNode(oldNode, newNode *html.Node) {
-	parent := oldNode.Parent
-	if parent == nil {
-		return // Cannot replace if no parent exists
-	}
-
-	// INFO: need to remove otherwise appendchild panics
-	newNode.Parent = nil
-	newNode.PrevSibling = nil
-	newNode.NextSibling = nil
-
-	switch newNode.Data {
-	case "fragment":
-		{
-			logger.Info("parent to fragment is", "node", parent.Data)
-			copyChildren(newNode, parent)
-		}
-	default:
-		{
-			parent.InsertBefore(newNode, oldNode)
-		}
-	}
-
-	// Insert the new node and remove the old node
-	parent.RemoveChild(oldNode)
 }
 
 func findHeadElement(n *html.Node) *html.Node {
@@ -82,31 +37,10 @@ func findHeadElement(n *html.Node) *html.Node {
 	return nil
 }
 
-func findComponentBody(n *html.Node) *html.Node {
-	logger.Debug("find BODY child", "type", n.Type, "data", n.Data, "attr", n.Attr, "data-atom", n.DataAtom)
-	if n.Type == html.ElementNode {
-		switch n.Data {
-		case "body":
-			return n.FirstChild
-		case "head":
-			{
-				if n.FirstChild != nil {
-					return n
-				}
-			}
-		}
-	}
-	// Recursively process child nodes
-	for c := n.FirstChild; c != nil; c = c.NextSibling {
-		if n := findComponentBody(c); n != nil {
-			return n
-		}
-	}
-
-	return nil
-}
-
 func parseHTML(n *html.Node, onTargetNodeFound func(node *html.Node)) error {
+	if n.Data == "body" {
+		logNode("body-node", n)
+	}
 	if n.Type == html.ElementNode && !HTMLTags.Has(n.Data) {
 		logNode("target-node", n)
 		onTargetNodeFound(n)
@@ -120,18 +54,55 @@ func parseHTML(n *html.Node, onTargetNodeFound func(node *html.Node)) error {
 	return nil
 }
 
-func renderHTML(w io.Writer, n *html.Node) error {
-	logger.Debug("RENDERING html")
-	return html.Render(w, n)
-}
-
-func parseComponentHTML(reader io.Reader) (*html.Node, error) {
-	n, err := html.Parse(reader)
+func parseWithFragments(reader io.Reader) (*html.Node, error) {
+	b, err := fixSelfClosingTags(reader)
 	if err != nil {
 		return nil, err
 	}
 
-	return findComponentBody(n), err
+	htmlNode := &html.Node{
+		Type:     html.ElementNode,
+		Data:     "html",
+		DataAtom: atom.Html,
+	}
+
+	nl, err := html.ParseFragment(bytes.NewReader(b), htmlNode)
+	if err != nil {
+		return nil, err
+	}
+
+	if len(nl) != 2 {
+		return nil, err
+	}
+
+	head, body := nl[0], nl[1]
+
+	headChildren := getChildren(head)
+	bodyChildren := getChildren(body)
+
+	switch {
+	case len(headChildren) > 0 && len(bodyChildren) > 0:
+		return html.Parse(bytes.NewReader(b))
+	case len(headChildren) > 0:
+		return head, nil
+
+	// case len(bodyChildren) > 0
+
+	case len(bodyChildren) == 1:
+		return body.FirstChild, nil
+
+	case len(bodyChildren) > 1:
+		newNode := &html.Node{
+			Type: html.ElementNode,
+			Data: "div",
+		}
+
+		copyChildren(body, newNode)
+		return newNode, nil
+
+	default:
+		return htmlNode, err
+	}
 }
 
 func htmlAttrsToMap(attrs []html.Attribute) map[string]any {
@@ -152,25 +123,27 @@ type Params struct {
 
 var re = regexp.MustCompile(`<([A-Za-z0-9]+)([^>]*)\/>`)
 
-func fixSelfClosingTags(r io.Reader) (io.Reader, error) {
+func fixSelfClosingTags(r io.Reader) ([]byte, error) {
 	b, err := io.ReadAll(r)
 	if err != nil {
 		return nil, err
 	}
 
 	b2 := re.ReplaceAll(b, []byte(`<$1$2></$1>`))
-	return bytes.NewReader(b2), nil
+	return b2, nil
 }
 
 func Parse(p Params) error {
-	r, err := fixSelfClosingTags(p.Input)
+	b, err := fixSelfClosingTags(p.Input)
 	if err != nil {
 		return err
 	}
 
-	n, err := html.Parse(r)
+	_ = atom.Body
+
+	n, err := parseWithFragments(bytes.NewReader(b))
 	if err != nil {
-		panic(err)
+		return err
 	}
 
 	headEl := findHeadElement(n)
@@ -195,7 +168,8 @@ func Parse(p Params) error {
 				return err
 			}
 
-			newNode, err := parseComponentHTML(b)
+			// newNode, err := parseComponentHTML(b)
+			newNode, err := parseWithFragments(b)
 			if err != nil {
 				return err
 			}
@@ -206,8 +180,6 @@ func Parse(p Params) error {
 					if headEl == nil {
 						headEl = rn
 					}
-
-					// printChild(rn)
 
 					copyChildren(newNode, headEl)
 					parent := rn.Parent
