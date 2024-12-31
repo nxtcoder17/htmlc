@@ -162,7 +162,7 @@ func structFromTemplate(structName string, t *template.Template) (Struct, error)
 
 var re = regexp.MustCompile(`{{-?\s*/\*\s* @param \s*(.*) \s*(.*) ()\*/}}`)
 
-func preProcess(tmpl string) string {
+func fixParamComments(tmpl string) string {
 	// matches := re.FindAllStringSubmatch(tmpl, -1)
 	// for _, m := range matches {
 	// 	fmt.Printf("item (%s, %s)\n", m[1], m[2])
@@ -180,7 +180,7 @@ func parseTemplateString(input string, defaultStructName string) (*template.Temp
 		},
 	})
 
-	t, err := t.Parse(preProcess(input))
+	t, err := t.Parse(fixParamComments(input))
 	if err != nil {
 		return nil, "", nil
 	}
@@ -284,26 +284,33 @@ type Parser struct {
 
 	outputFileTmpl *template.Template
 	outputPkgTmpl  *template.Template
+
+	// allTemplates *template.Template
+	// postProcess  func(t *template.Template) (string, error)
 }
 
-func (p *Parser) ParseDir(inputDir string, patterns []string, outputDir string, outputPkg string) error {
-	if patterns == nil {
-		patterns = []string{"*.html", "**/*.html"}
+type ParseOptions struct {
+	GlobPatterns     []string
+	StructNamePrefix *string
+}
+
+func (p *Parser) ParseDir(inputDir string, outputDir string, outputPkg string, opts ...ParseOptions) error {
+	opt := ParseOptions{}
+
+	if len(opts) >= 1 {
+		opt = opts[0]
 	}
 
-	dirfs := os.DirFS(inputDir)
+	if opt.GlobPatterns == nil {
+		opt.GlobPatterns = []string{"*.html", "**/*.html"}
+	}
 
-	// de, err := fs.ReadDir(dirfs, ".")
-	// if err != nil {
-	// 	return err
-	// }
-	//
-	// fmt.Printf("ls: %#v (%d)", de, len(de))
+	fmt.Println("pre-processing", "output-pkg", outputPkg)
 
 	var listings []string
 
-	for _, pattern := range patterns {
-		list, err := fs.Glob(dirfs, pattern)
+	for _, pattern := range opt.GlobPatterns {
+		list, err := fs.Glob(os.DirFS(inputDir), pattern)
 		if err != nil {
 			panic(err)
 		}
@@ -315,24 +322,37 @@ func (p *Parser) ParseDir(inputDir string, patterns []string, outputDir string, 
 	}
 
 	if len(listings) == 0 {
-		panic(fmt.Errorf("template: pattern matches no files: %#q", patterns))
+		panic(fmt.Errorf("template: pattern matches no files: %#q", opt.GlobPatterns))
+	}
+
+	if err := p.PrintOutputPkgFile(outputDir, outputPkg); err != nil {
+		return err
 	}
 
 	for _, item := range listings {
+		fmt.Printf("template-parser | listing | %s\n", item)
+
 		input, err := os.ReadFile(filepath.Join(inputDir, item))
 		if err != nil {
 			return err
 		}
 
-		fmt.Println(filepath.Join(inputDir, item))
-
 		base := filepath.Base(item)
 		base = toFieldName(base[:len(base)-len(filepath.Ext(base))])
-		parseFuncName := "parse" + base
 
-		outFile := filepath.Join(outputDir, fmt.Sprintf("%s_generated.go", filepath.Base(item)))
+		defStructName := base
+		if opt.StructNamePrefix != nil {
+			defStructName = toFieldName(*opt.StructNamePrefix + base)
+		}
 
-		if err := p.parse(string(input), base, parseFuncName, &outFile, outputPkg); err != nil {
+		parseFuncName := "parse" + defStructName
+
+		outFile := filepath.Join(outputDir, fmt.Sprintf("%s_generated.go", item))
+		if err := os.MkdirAll(filepath.Dir(outFile), 0o766); err != nil {
+			return err
+		}
+
+		if err := p.parse(string(input), defStructName, parseFuncName, &outFile, outputPkg); err != nil {
 			return err
 		}
 	}
@@ -346,10 +366,21 @@ func (p *Parser) Parse(input string, outputFile *string, outputPkg string) error
 }
 
 func (p *Parser) parse(input string, structName string, parseFuncName string, outputFile *string, outputPkg string) error {
-	tmpl, imports, structs, err := generateStructs(input, structName)
+	// tmpl, imports, structs, err := generateStructs(input, structName)
+	// if err != nil {
+	// 	return err
+	// }
+
+	fp, err := NewFileParser(string(input), structName)
 	if err != nil {
 		return err
 	}
+
+	tmpl, imports, structs, err := fp.Parse()
+
+	// if _, err := p.allTemplates.Parse(tmpl); err != nil {
+	// 	return err
+	// }
 
 	imports = append(imports, p.templateImport)
 	out := os.Stdout
@@ -359,12 +390,13 @@ func (p *Parser) parse(input string, structName string, parseFuncName string, ou
 		if err != nil {
 			return err
 		}
-
-		outDir := filepath.Dir(*outputFile)
-		if err := p.PrintOutputPkgFile(outDir, outputPkg); err != nil {
-			return err
-		}
+		// outDir := filepath.Dir(*outputFile)
+		// if err := p.PrintOutputPkgFile(outDir, outputPkg); err != nil {
+		// 	return err
+		// }
 	}
+
+	fmt.Println("HELLO .......", outputPkg)
 
 	return p.PrintOutputFile(out, printOutputArgs{
 		Package:       outputPkg,
@@ -418,5 +450,6 @@ func NewParser(ttype TemplateType) (*Parser, error) {
 		templateImport: fmt.Sprintf("%s/template", ttype),
 		outputFileTmpl: t,
 		outputPkgTmpl:  outputPkgTmpl,
+		// allTemplates:   template.New("all-templates").Funcs(funcs),
 	}, nil
 }

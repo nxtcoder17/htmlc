@@ -16,8 +16,9 @@ type Component interface {
 
 func register(name string, c Component, parse func(*template.Template) error) {
   if err := parse(Template); err != nil {
-    panic(fmt.Errorf("failed to parse template (%s), got error: \n%v\n", name, err))
+    panic(fmt.Errorf("failed to parse template (%s), got error:\n%v", name, err))
   }
 
   Components[strings.ToLower(name)] = c
 }
+

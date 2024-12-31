@@ -86,7 +86,7 @@ func parseWithFragments(reader io.Reader) (*html.Node, error) {
 	case len(headChildren) > 0:
 		return head, nil
 
-	// case len(bodyChildren) > 0
+	// INFO: len(bodyChildren) > 0
 
 	case len(bodyChildren) == 1:
 		return body.FirstChild, nil
