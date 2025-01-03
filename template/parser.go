@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"io/fs"
+	"log/slog"
 	"os"
 	"path/filepath"
 	"regexp"
@@ -13,6 +14,12 @@ import (
 	"text/template"
 	"text/template/parse"
 )
+
+var logger *slog.Logger
+
+func init() {
+	logger = slog.Default()
+}
 
 func pp(prefix string, v ...any) {
 	b, _ := json.MarshalIndent(v, "", "  ")
@@ -30,12 +37,10 @@ func pp2(prefix string, v ...any) {
 const paramLabel string = "__param__"
 
 func parseNode(p parse.Node, prefix string, onNodeFound func(sf StructField, isComment bool)) {
-	// fmt.Println("got node", prefix, p.String(), p.Type())
 	switch node := p.(type) {
 	case *parse.IdentifierNode:
 		{
 			onNodeFound(toStructField(node.String(), "any"), false)
-			// onNodeFound(node.String(), "any", false)
 			pp(fmt.Sprintf("identifier node (%s)", prefix), node.String())
 		}
 
@@ -113,14 +118,14 @@ func parseNode(p parse.Node, prefix string, onNodeFound func(sf StructField, isC
 
 func structFromTemplate(structName string, t *template.Template) (Struct, error) {
 	var fields []StructField
-	commentsMap := make(map[string]string)
+	commentsMap := make(map[string]StructField)
 
 	fieldsMap := make(map[string]int)
 
 	onVarFound := func(sf StructField, isFromComment bool) {
 		if isFromComment {
 			if _, ok := commentsMap[sf.Name]; !ok {
-				commentsMap[sf.Name] = sf.Type
+				commentsMap[sf.Name] = sf
 			}
 			return
 		}
@@ -141,15 +146,17 @@ func structFromTemplate(structName string, t *template.Template) (Struct, error)
 	// fmt.Printf("commentsMap: %+v\n", commentsMap)
 
 	for i := range fields {
-		if commentType, ok := commentsMap[fields[i].Name]; ok {
-			if idx := strings.LastIndex(commentType, "."); idx != -1 {
-				pkg := commentType[:idx]
+		if sf, ok := commentsMap[fields[i].Name]; ok {
+			if idx := strings.LastIndex(sf.Type, "."); idx != -1 {
+				pkg := sf.Type[:idx]
 				imports = append(imports, pkg)
 				fields[i].Package = &pkg
-				fields[i].Type = fmt.Sprintf("%s.%s", filepath.Base(pkg), commentType[idx+1:])
+				fields[i].Type = fmt.Sprintf("%s.%s", filepath.Base(pkg), sf.Type[idx+1:])
+				fields[i].Tag = sf.Tag
 				continue
 			}
-			fields[i].Type = commentType
+			fields[i].Type = sf.Type
+			fields[i].Tag = sf.Tag
 		}
 	}
 
@@ -171,61 +178,70 @@ func fixParamComments(tmpl string) string {
 	return re.ReplaceAllString(tmpl, fmt.Sprintf(`{{- %s "$1" "$2" -}}`, paramLabel))
 }
 
-func parseTemplateString(input string, defaultStructName string) (*template.Template, string, error) {
-	// Parse the template
-	t := template.New("t:parser")
-	t.Funcs(template.FuncMap{
-		paramLabel: func(key, value string) string {
-			return "/* comment */"
-		},
-	})
+func removeParamComments(tmpl string) string {
+	// matches := re.FindAllStringSubmatch(tmpl, -1)
+	// for _, m := range matches {
+	// 	fmt.Printf("item (%s, %s)\n", m[1], m[2])
+	// }
 
-	t, err := t.Parse(fixParamComments(input))
-	if err != nil {
-		return nil, "", nil
-	}
-
-	if len(t.Templates()) == 1 {
-		fmt.Println("HERE................")
-		return parseTemplateString(strings.Join([]string{
-			fmt.Sprintf(`{{- define "%s" }}`, defaultStructName),
-			input,
-			`{{- end }}`,
-		}, "\n"), defaultStructName)
-	}
-
-	return t, input, nil
+	return re.ReplaceAllString(tmpl, "")
 }
 
-func generateStructs(tmpl string, defaultStructName string) (fixedTemplate string, imports []string, structs []Struct, err error) {
-	imports = append(imports,
-		"github.com/go-playground/validator/v10",
-		"io",
-		"encoding/json",
-	)
+// func parseTemplateString(input string, defaultStructName string) (*template.Template, string, error) {
+// 	// Parse the template
+// 	t := template.New("t:parser")
+// 	t.Funcs(template.FuncMap{
+// 		paramLabel: func(key, value string) string {
+// 			return "/* comment */"
+// 		},
+// 	})
+//
+// 	t, err := t.Parse(fixParamComments(input))
+// 	if err != nil {
+// 		return nil, "", nil
+// 	}
+//
+// 	if len(t.Templates()) == 1 {
+// 		fmt.Println("HERE................")
+// 		return parseTemplateString(strings.Join([]string{
+// 			fmt.Sprintf(`{{- define "%s" }}`, defaultStructName),
+// 			input,
+// 			`{{- end }}`,
+// 		}, "\n"), defaultStructName)
+// 	}
+//
+// 	return t, input, nil
+// }
 
-	t, tmpl, err := parseTemplateString(tmpl, defaultStructName)
-
-	result := make([]Struct, 0, len(t.Templates()))
-	for _, v := range t.Templates() {
-		if v.Name() == "t:parser" && len(t.Templates()) > 1 {
-			continue
-		}
-
-		sname := generateStructName(v.Name())
-
-		s, err := structFromTemplate(sname, v)
-		if err != nil {
-			return "", nil, nil, err
-		}
-		s.FromTemplate = v.Name()
-
-		result = append(result, s)
-		imports = append(imports, s.Imports...)
-	}
-
-	return tmpl, imports, result, nil
-}
+// func generateStructs(tmpl string, defaultStructName string) (fixedTemplate string, imports []string, structs []Struct, err error) {
+// 	imports = append(imports,
+// 		"github.com/go-playground/validator/v10",
+// 		"io",
+// 		"encoding/json",
+// 	)
+//
+// 	t, tmpl, err := parseTemplateString(tmpl, defaultStructName)
+//
+// 	result := make([]Struct, 0, len(t.Templates()))
+// 	for _, v := range t.Templates() {
+// 		if v.Name() == "t:parser" && len(t.Templates()) > 1 {
+// 			continue
+// 		}
+//
+// 		sname := generateStructName(v.Name())
+//
+// 		s, err := structFromTemplate(sname, v)
+// 		if err != nil {
+// 			return "", nil, nil, err
+// 		}
+// 		s.FromTemplate = v.Name()
+//
+// 		result = append(result, s)
+// 		imports = append(imports, s.Imports...)
+// 	}
+//
+// 	return tmpl, imports, result, nil
+// }
 
 // type Option struct {
 // 	TemplateType string
@@ -292,6 +308,7 @@ type Parser struct {
 type ParseOptions struct {
 	GlobPatterns     []string
 	StructNamePrefix *string
+	PreProcess       func(tmpl string) (string, error)
 }
 
 func (p *Parser) ParseDir(inputDir string, outputDir string, outputPkg string, opts ...ParseOptions) error {
@@ -304,8 +321,6 @@ func (p *Parser) ParseDir(inputDir string, outputDir string, outputPkg string, o
 	if opt.GlobPatterns == nil {
 		opt.GlobPatterns = []string{"*.html", "**/*.html"}
 	}
-
-	fmt.Println("pre-processing", "output-pkg", outputPkg)
 
 	var listings []string
 
@@ -330,7 +345,7 @@ func (p *Parser) ParseDir(inputDir string, outputDir string, outputPkg string, o
 	}
 
 	for _, item := range listings {
-		fmt.Printf("template-parser | listing | %s\n", item)
+		logger.Debug("template-parser | listings", "item", item)
 
 		input, err := os.ReadFile(filepath.Join(inputDir, item))
 		if err != nil {
@@ -352,7 +367,7 @@ func (p *Parser) ParseDir(inputDir string, outputDir string, outputPkg string, o
 			return err
 		}
 
-		if err := p.parse(string(input), defStructName, parseFuncName, &outFile, outputPkg); err != nil {
+		if err := p.parse(string(input), defStructName, parseFuncName, &outFile, outputPkg, opt.PreProcess); err != nil {
 			return err
 		}
 	}
@@ -365,22 +380,16 @@ func (p *Parser) Parse(input string, outputFile *string, outputPkg string) error
 	return p.parse(input, "YourStdoutStruct", parseFuncName, outputFile, outputPkg)
 }
 
-func (p *Parser) parse(input string, structName string, parseFuncName string, outputFile *string, outputPkg string) error {
-	// tmpl, imports, structs, err := generateStructs(input, structName)
-	// if err != nil {
-	// 	return err
-	// }
-
-	fp, err := NewFileParser(string(input), structName)
+func (p *Parser) parse(input string, structName string, parseFuncName string, outputFile *string, outputPkg string, preProcess ...func(tmpl string) (string, error)) error {
+	fp, err := NewFileParser(string(input), structName, preProcess...)
 	if err != nil {
 		return err
 	}
 
 	tmpl, imports, structs, err := fp.Parse()
 
-	// if _, err := p.allTemplates.Parse(tmpl); err != nil {
-	// 	return err
-	// }
+	// INFO: to remove @param comments, in generated file
+	// tmpl = removeParamComments(tmpl)
 
 	imports = append(imports, p.templateImport)
 	out := os.Stdout
@@ -395,8 +404,6 @@ func (p *Parser) parse(input string, structName string, parseFuncName string, ou
 		// 	return err
 		// }
 	}
-
-	fmt.Println("HELLO .......", outputPkg)
 
 	return p.PrintOutputFile(out, printOutputArgs{
 		Package:       outputPkg,

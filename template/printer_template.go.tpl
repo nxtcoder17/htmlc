@@ -14,7 +14,11 @@ package {{ .Package }}
 
 func init() {
   {{- range $structs }}
-  register({{.Name | quote }}, &{{.Name}}{}, {{$.ParseFuncName}})
+  register(
+    {{.Name | quote }}, 
+    func() Component { return &{{.Name}}{} },
+    {{$.ParseFuncName}},
+  )
   {{- end }}
 }
 
@@ -44,7 +48,7 @@ func (n *{{.Name}}) Render(t *template.Template, w io.Writer) error {
     return err
   }
 
-  b, err := json.Marshal(*n)
+  b, err := json.Marshal(n)
 	if err != nil {
 		return err
 	}

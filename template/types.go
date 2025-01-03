@@ -97,10 +97,11 @@ func toStructField(varName, varType string) StructField {
 
 	var tag string
 	switch {
-	case !strings.HasPrefix(varName, "?"):
-		tag = fmt.Sprint("`", fmt.Sprintf(`json:"%s" validate:"required"`, varName), "`")
+	case strings.HasSuffix(varName, "?"):
+		// Optional Variable
+		tag = fmt.Sprint("`", fmt.Sprintf(`json:"%s"`, varName[:len(varName)-1]), "`")
 	default:
-		tag = fmt.Sprint("`", fmt.Sprintf(`json:"%s"`, varName), "`")
+		tag = fmt.Sprint("`", fmt.Sprintf(`json:"%s" validate:"required"`, varName), "`")
 	}
 
 	return StructField{

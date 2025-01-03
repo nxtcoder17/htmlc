@@ -38,13 +38,15 @@ func (fp *FileParser) Parse() (parsedTmpl string, imports []string, structs []St
 	return fp.Content, imports, result, nil
 }
 
-func NewFileParser(content string, defaultStructName string) (*FileParser, error) {
+func NewFileParser(content string, defaultStructName string, preProcess ...func(string) (string, error)) (*FileParser, error) {
 	t := template.New("t:parser")
-	t.Funcs(template.FuncMap{
+	funcs := template.FuncMap{
 		paramLabel: func(key, value string) string {
 			return "/* comment */"
 		},
-	})
+	}
+
+	t.Funcs(funcs)
 
 	t, err := t.Parse(fixParamComments(content))
 	if err != nil {
@@ -52,15 +54,15 @@ func NewFileParser(content string, defaultStructName string) (*FileParser, error
 	}
 
 	if len(t.Templates()) == 1 {
-		return NewFileParser(fmt.Sprintf(`{{- define "%s"}}
+		content = fmt.Sprintf(`{{- define "%s"}}
 %s
 
-{{- end }}`, defaultStructName, content), defaultStructName)
+{{- end }}`, defaultStructName, content)
 	}
 
-	if len(t.Templates()) < 2 {
-		return nil, fmt.Errorf("check whether above if condition works")
-	}
+	t = template.New("t:parser")
+	t.Funcs(funcs)
+	t.Parse(content)
 
 	return &FileParser{
 		t:       t,
