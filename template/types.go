@@ -66,6 +66,7 @@ type StructField struct {
 	Name    string
 	Type    string
 	Package *string
+	JsonName string
 	Tag     string
 }
 
@@ -95,19 +96,22 @@ func toFieldName(str string) string {
 func toStructField(varName, varType string) StructField {
 	fieldName := toFieldName(varName)
 
-	var tag string
+  var tag, jsonName string
 	switch {
 	case strings.HasSuffix(varName, "?"):
 		// Optional Variable
-		tag = fmt.Sprint("`", fmt.Sprintf(`json:"%s"`, varName[:len(varName)-1]), "`")
+		jsonName = varName[:len(varName)-1]
+		tag = fmt.Sprint("`", fmt.Sprintf(`json:"%s"`, jsonName), "`")
 	default:
-		tag = fmt.Sprint("`", fmt.Sprintf(`json:"%s" validate:"required"`, varName), "`")
+		jsonName = varName
+		tag = fmt.Sprint("`", fmt.Sprintf(`json:"%s" validate:"required"`, jsonName), "`")
 	}
 
 	return StructField{
 		Name: fieldName,
 		Type: varType,
 		Tag:  tag,
+		JsonName: jsonName,
 	}
 }
 

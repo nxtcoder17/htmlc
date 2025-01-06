@@ -23,13 +23,17 @@ func (p *Parser) PrintOutputFile(writer io.Writer, args printOutputArgs) error {
 		return err
 	}
 
-	formatted, err := format.Source(b.Bytes())
-	if err != nil {
-		return err
-	}
-
-	_, err = writer.Write(formatted)
+  var err error
+	_, err = writer.Write(b.Bytes())
 	return err
+
+	// formatted, err := format.Source(b.Bytes())
+	// if err != nil {
+	// 	return err
+	// }
+	//
+	// _, err = writer.Write(formatted)
+	// return err
 }
 
 func (p *Parser) PrintOutputPkgFile(dir string, pkgName string) error {

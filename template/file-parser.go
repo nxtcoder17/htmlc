@@ -62,7 +62,7 @@ func NewFileParser(content string, defaultStructName string, preProcess ...func(
 
 	t = template.New("t:parser")
 	t.Funcs(funcs)
-	t.Parse(content)
+	t.Parse(fixParamComments(content))
 
 	return &FileParser{
 		t:       t,

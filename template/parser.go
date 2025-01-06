@@ -60,6 +60,8 @@ func parseNode(p parse.Node, prefix string, onNodeFound func(sf StructField, isC
 			for _, c := range node.Pipe.Cmds {
 				pp2("cmds", c.String())
 
+				logger.Debug("got comment", "c.Args", c.Args)
+
 				if len(c.Args) >= 3 && c.Args[0].String() == paramLabel {
 					// INFO: it is our param comment
 					varName, err := strconv.Unquote(c.Args[1].String())
@@ -128,6 +130,10 @@ func structFromTemplate(structName string, t *template.Template) (Struct, error)
 				commentsMap[sf.Name] = sf
 			}
 			return
+		}
+
+		if sf.Name == "Props" || sf.Name == "Remaining" {
+		  return
 		}
 
 		if _, ok := fieldsMap[sf.Name]; !ok {
@@ -440,6 +446,10 @@ func NewParser(ttype TemplateType) (*Parser, error) {
 		"squote": func(str string) string {
 			str = strconv.Quote(str)
 			return "'" + str[1:len(str)-1] + "'"
+		},
+
+		"lowercase": func(str string) string{
+		  return strings.ToLower(str)
 		},
 	}
 
