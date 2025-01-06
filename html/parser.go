@@ -6,7 +6,9 @@ import (
 	"html/template"
 	"io"
 	"log/slog"
+	"os"
 	"regexp"
+	"strings"
 	textTemplate "text/template"
 
 	"github.com/nxtcoder17/go-template/pkg/log"
@@ -15,6 +17,8 @@ import (
 )
 
 var logger *slog.Logger
+
+var verboseDebugging bool
 
 func init() {
 	l := log.New(log.ShowCallerInfo())
@@ -39,13 +43,35 @@ func findHeadElement(n *html.Node) *html.Node {
 	return nil
 }
 
-func parseHTML(n *html.Node, onTargetNodeFound func(node *html.Node)) error {
-	if n.Data == "body" {
-		logNode("body-node", n)
+func findChildrenPlaceholderNode(n *html.Node) *html.Node {
+	if n.Type == html.ElementNode {
+		logger.Debug("find HEAD element", "type", n.Type, "data", n.Data, "attr", n.Attr, "data-atom", n.DataAtom)
+		switch n.Data {
+		case "children":
+			return n
+		}
 	}
+	// Recursively process child nodes
+	for c := n.FirstChild; c != nil; c = c.NextSibling {
+		if n := findChildrenPlaceholderNode(c); n != nil {
+			return n
+		}
+	}
+
+	return nil
+}
+
+func parseHTML(n *html.Node, onTargetNodeFound func(node *html.Node)) error {
+	if n.DataAtom == atom.Svg {
+		return nil
+	}
+
 	if n.Type == html.ElementNode && !HTMLTags.Has(n.Data) {
-		logNode("target-node", n)
-		onTargetNodeFound(n)
+		if strings.ToLower(n.Data) != "children" {
+			// logNode("target-node", n)
+			onTargetNodeFound(n)
+			return nil
+		}
 	}
 
 	// Recursively process child nodes
@@ -64,16 +90,18 @@ func parseWithFragments(reader io.Reader) (*html.Node, error) {
 
 	t := textTemplate.New("t:html:parser")
 	t = t.Funcs(template.FuncMap{
-		"__param__": func(k, v string) string {
-			return "/* comment */"
+		"children": func() string {
+			return ""
 		},
+		// "__param__": func(k, v string) string {
+		// 	return "/* comment */"
+		// },
 	})
 	if _, err := t.Parse(string(b)); err != nil {
 		return nil, err
 	}
 
 	if len(t.Templates()) > 1 {
-		logger.Warn("HERE")
 		content := ""
 		for _, mt := range t.Templates() {
 			if mt.Name() != t.Name() {
@@ -105,11 +133,6 @@ func parseWithFragments(reader io.Reader) (*html.Node, error) {
 	headChildren := getChildren(head)
 	bodyChildren := getChildren(body)
 
-	// FIXME: bug in this flow
-	// logNode("html", nl[0])
-	logNode("head", head)
-	logNode("body", body)
-
 	switch {
 	case len(headChildren) > 0 && len(bodyChildren) > 0:
 		return html.Parse(bytes.NewReader(b))
@@ -133,7 +156,7 @@ func parseWithFragments(reader io.Reader) (*html.Node, error) {
 		// default:
 		// 	return htmlNode, err
 	}
-	return nil, fmt.Errorf("failed to parse html node :):(")
+	return nil, fmt.Errorf("failed to parse html node :)")
 }
 
 func htmlAttrsToMap(attrs []html.Attribute) map[string]any {
@@ -165,6 +188,10 @@ func fixSelfClosingTags(r io.Reader) ([]byte, error) {
 }
 
 func parseHTMLAndTranspile(n *html.Node, t *template.Template, getComponent func(name string, attrs map[string]any) (Component, error)) (*html.Node, error) {
+  if verboseDebugging {
+	  logNode(":) I HAVE BEEN CALLED", n)
+  }
+
 	var replaceNodes []*html.Node
 	onTargetNodeFound := func(n *html.Node) {
 		replaceNodes = append(replaceNodes, n)
@@ -177,44 +204,70 @@ func parseHTMLAndTranspile(n *html.Node, t *template.Template, getComponent func
 	headEl := findHeadElement(n)
 
 	for _, rn := range replaceNodes {
-		if rn.Type == html.ElementNode {
-			component, err := getComponent(rn.Data, htmlAttrsToMap(rn.Attr))
-			if err != nil {
-				return nil, err
+    if verboseDebugging {
+		  logNode(":) I HAVE to replace", rn)
+    }
+		component, err := getComponent(rn.Data, htmlAttrsToMap(rn.Attr))
+		if err != nil {
+			return nil, err
+		}
+
+		b := new(bytes.Buffer)
+
+		if err := component.Render(b); err != nil {
+			return nil, err
+		}
+
+		// logger.Info("debugging", "rendered component",  b.String())
+
+		newNode, err := parseWithFragments(b)
+		if err != nil {
+			return nil, err
+		}
+
+		newNode, err = parseHTMLAndTranspile(newNode, t, getComponent)
+		if err != nil {
+			return nil, err
+		}
+
+		if verboseDebugging {
+			fmt.Println("------------------------------")
+			renderHTML(os.Stdout, newNode)
+			fmt.Println("------------------------------")
+		}
+
+		switch newNode.Data {
+		case "head":
+			{
+				if headEl == nil {
+					headEl = rn
+				}
+
+				copyChildren(newNode, headEl)
+				parent := rn.Parent
+				parent.RemoveChild(rn)
 			}
+		default:
+			{
+				// INFO: finds the <Children /> node, and replaces it with the real component children
+				if childrenNode := findChildrenPlaceholderNode(newNode); childrenNode != nil {
+					childparent := childrenNode.Parent
+					copyChildren(rn, childparent, childrenNode)
+					childparent.RemoveChild(childrenNode)
 
-			b := new(bytes.Buffer)
-
-			if err := component.Render(t, b); err != nil {
-				return nil, err
-			}
-
-			newNode, err := parseWithFragments(b)
-			if err != nil {
-				return nil, err
-			}
-
-			newNode, err = parseHTMLAndTranspile(newNode, t, getComponent)
-			if err != nil {
-				return nil, err
-			}
-
-			switch newNode.Data {
-			case "head":
-				{
-					if headEl == nil {
-						headEl = rn
+					newNode, err = parseHTMLAndTranspile(newNode, t, getComponent)
+					if err != nil {
+						return nil, err
 					}
-
-					copyChildren(newNode, headEl)
-					parent := rn.Parent
-					parent.RemoveChild(rn)
-				}
-			default:
-				{
+				} else {
 					copyChildren(rn, newNode)
-					replaceNode(rn, newNode)
+
+					newNode, err = parseHTMLAndTranspile(newNode, t, getComponent)
+					if err != nil {
+						return nil, err
+					}
 				}
+				replaceNode(rn, newNode)
 			}
 		}
 	}
@@ -235,58 +288,4 @@ func Parse(p Params) error {
 	}
 
 	return html.Render(p.Output, n2)
-
-	//
-	// headEl := findHeadElement(n)
-	//
-	// var replaceNodes []*html.Node
-	// onTargetNodeFound := func(n *html.Node) {
-	// 	replaceNodes = append(replaceNodes, n)
-	// }
-	//
-	// parseHTML(n, onTargetNodeFound)
-	//
-	// for _, rn := range replaceNodes {
-	// 	if rn.Type == html.ElementNode {
-	// 		component, err := p.GetComponent(rn.Data, htmlAttrsToMap(rn.Attr))
-	// 		if err != nil {
-	// 			return err
-	// 		}
-	//
-	// 		b := new(bytes.Buffer)
-	//
-	// 		if err := component.Render(p.Template, b); err != nil {
-	// 			return err
-	// 		}
-	//
-	// 		// newNode, err := parseComponentHTML(b)
-	// 		newNode, err := parseWithFragments(b)
-	// 		// newNode, err := findEffectiveTree(b)
-	// 		if err != nil {
-	// 			return err
-	// 		}
-	//
-	// 		// parseHTML(newNode, onTargetNodeFound)
-	//
-	// 		switch newNode.Data {
-	// 		case "head":
-	// 			{
-	// 				if headEl == nil {
-	// 					headEl = rn
-	// 				}
-	//
-	// 				copyChildren(newNode, headEl)
-	// 				parent := rn.Parent
-	// 				parent.RemoveChild(rn)
-	// 			}
-	// 		default:
-	// 			{
-	// 				copyChildren(rn, newNode)
-	// 				replaceNode(rn, newNode)
-	// 			}
-	// 		}
-	// 	}
-	// }
-
-	return renderHTML(p.Output, n)
 }

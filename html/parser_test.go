@@ -116,7 +116,6 @@ func TestParse(t *testing.T) {
 			wantOutput: []byte(`<input type="email" label="{{.label}}"/>`),
 			wantErr:    false,
 		},
-
 		{
 			name: "4. parsing a simple template define block",
 			args: args{

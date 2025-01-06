@@ -29,7 +29,7 @@ func getChildren(n *html.Node) []*html.Node {
 	return result
 }
 
-func copyChildren(oldNode, newNode *html.Node) {
+func copyChildren(oldNode, newNode *html.Node, insertBefore ...*html.Node) {
 	logger.Debug("HERE", "oldnode", oldNode.Data, "new node", newNode.Data)
 	for c := oldNode.FirstChild; c != nil; c = c.NextSibling {
 		logger.Debug("HERE", "oldnode.FirstChild", c == nil, "new node", newNode == nil)
@@ -43,6 +43,10 @@ func copyChildren(oldNode, newNode *html.Node) {
 			Attr:       c.Attr,
 		}
 
+		if len(insertBefore) > 0 {
+			newNode.InsertBefore(&nc, insertBefore[0])
+			continue
+		}
 		newNode.AppendChild(&nc)
 	}
 }
@@ -70,7 +74,6 @@ func replaceNode(oldNode, newNode *html.Node) {
 			parent.InsertBefore(newNode, oldNode)
 		}
 	}
-
 	// Insert the new node and remove the old node
 	parent.RemoveChild(oldNode)
 }
