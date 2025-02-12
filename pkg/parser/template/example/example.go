@@ -2,10 +2,8 @@ package main
 
 import (
 	"flag"
-	"io"
-	"os"
 
-	"github.com/nxtcoder17/go-template/pkg/parser/template"
+	"github.com/nxtcoder17/htmlc/pkg/parser/template"
 )
 
 func main() {
@@ -21,26 +19,12 @@ func main() {
 		panic("must specify in, type and out-pkg")
 	}
 
-	var writer io.WriteCloser = os.Stdout
-	if out != "" {
-		f, err := os.Create(out)
-		if err != nil {
-			panic(err)
-		}
-		writer = f
-	}
-
-	f, err := os.Open(in)
+	p, err := template.NewParser(template.TemplateType(ttype))
 	if err != nil {
 		panic(err)
 	}
 
-	if err := template.Parse(template.Option{
-		TemplateType: ttype,
-		Input:        f,
-		Output:       writer,
-		OutPkg:       outpkg,
-	}); err != nil {
+	if err := p.Parse(in, nil, outpkg); err != nil {
 		panic(err)
 	}
 }

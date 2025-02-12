@@ -30,7 +30,7 @@ Message: {{.Message}}
 			},
 			want: []Struct{
 				{
-					Name: "YourStructName",
+					Name: defaultStructName,
 					Fields: []StructField{
 						{Name: "Name", Type: "string"},
 						{Name: "Message", Type: "string"},
@@ -168,15 +168,22 @@ Greeting: {{.Greeting}}
 		// }
 
 		t.Run(tt.name, func(t *testing.T) {
-			_, gotStructs, err := generateStructs(tt.args.tmpl)
+			fp, err := NewFileParser(tt.args.tmpl, defaultStructName)
+			if err != nil {
+				panic(err)
+			}
+
+			_, _, structs, err := fp.Parse()
+
+			// _, gotStructs, err := generateStructs(tt.args.tmpl)
 			if (err != nil) != tt.wantErr {
 				t.Errorf("generateStruct() error = %v, wantErr %v", err, tt.wantErr)
 				return
 			}
 
 			got := ""
-			for i := range gotStructs {
-				s, err := gotStructs[i].String()
+			for i := range structs {
+				s, err := structs[i].String()
 				if err != nil {
 					t.Errorf("generateStruct() error = %v, wantErr %v", err, tt.wantErr)
 					return

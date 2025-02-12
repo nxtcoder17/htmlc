@@ -2,7 +2,6 @@ package template
 
 import (
 	_ "embed"
-	"encoding/json"
 	"fmt"
 	"io/fs"
 	"log/slog"
@@ -15,33 +14,22 @@ import (
 	"text/template/parse"
 )
 
-var logger *slog.Logger
+var Logger *slog.Logger
 
 func init() {
-	logger = slog.Default()
-}
-
-func pp(prefix string, v ...any) {
-	b, _ := json.MarshalIndent(v, "", "  ")
-	_ = b
-	_ = prefix
-	// fmt.Printf("%s:\t%s\n", prefix, b)
-}
-
-func pp2(prefix string, v ...any) {
-	b, _ := json.MarshalIndent(v, "", "  ")
-	_, _ = b, prefix
-	// fmt.Printf("%s:\t%s\n", prefix, b)
+	Logger = slog.Default()
 }
 
 const paramLabel string = "__param__"
+
+var defaultStructName = "YourStdoutStruct"
 
 func parseNode(p parse.Node, prefix string, onNodeFound func(sf StructField, isComment bool)) {
 	switch node := p.(type) {
 	case *parse.IdentifierNode:
 		{
 			onNodeFound(toStructField(node.String(), "any"), false)
-			pp(fmt.Sprintf("identifier node (%s)", prefix), node.String())
+			Logger.Debug("identifier node", "prefix", prefix, "node", node.String())
 		}
 
 	// CASE: .Variable
@@ -50,17 +38,15 @@ func parseNode(p parse.Node, prefix string, onNodeFound func(sf StructField, isC
 			for _, v := range node.Ident {
 				onNodeFound(toStructField(v, "any"), false)
 			}
-			pp(fmt.Sprintf("field node (%s)", prefix), node.Type(), node.String())
+			Logger.Debug("field node", "prefix", prefix, "node", node.String())
 		}
 
 	// CASE: {{.Variable}}
 	case *parse.ActionNode:
 		{
-			pp2(fmt.Sprintf("action node (%s)", prefix), node.Pipe.String())
+			Logger.Debug("action node", "prefix", prefix, "node", node.Pipe.String())
 			for _, c := range node.Pipe.Cmds {
-				pp2("cmds", c.String())
-
-				logger.Debug("got comment", "c.Args", c.Args)
+				Logger.Debug("got comment", "c.Args", c.Args)
 
 				if len(c.Args) >= 3 && c.Args[0].String() == paramLabel {
 					// INFO: it is our param comment
@@ -79,7 +65,7 @@ func parseNode(p parse.Node, prefix string, onNodeFound func(sf StructField, isC
 				}
 
 				for idx, ci := range c.Args {
-					pp2(fmt.Sprintf("cmds[%d]", idx), ci.Type(), ci.String())
+					Logger.Debug(fmt.Sprintf("cmds[%d]", idx), "type", ci.Type(), "cmd", ci.String())
 					parseNode(ci, fmt.Sprintf("cmds[%d]", idx), onNodeFound)
 				}
 			}
@@ -91,9 +77,8 @@ func parseNode(p parse.Node, prefix string, onNodeFound func(sf StructField, isC
 		}
 	case *parse.IfNode:
 		{
-			pp(fmt.Sprintf("if node (%s)", prefix), node.String())
+			Logger.Debug("if node", "prefix", prefix, "node", node.String(), "pipe", node.Pipe.Cmds)
 
-			pp("if node pipe", node.Pipe.Cmds)
 			for i := range node.Pipe.Cmds {
 				parseNode(node.Pipe.Cmds[i], prefix, onNodeFound)
 			}
@@ -102,7 +87,7 @@ func parseNode(p parse.Node, prefix string, onNodeFound func(sf StructField, isC
 			parseNode(node.ElseList, "else", onNodeFound)
 		}
 	case *parse.ListNode:
-		pp(fmt.Sprintf("list node (%s)", prefix), node.String())
+		Logger.Debug("list node", "prefix", prefix, "node", node.String())
 		for i := range node.Nodes {
 			parseNode(node.Nodes[i], fmt.Sprintf("list [%d]", i), onNodeFound)
 		}
@@ -112,9 +97,6 @@ func parseNode(p parse.Node, prefix string, onNodeFound func(sf StructField, isC
 		for i := range node.Args {
 			parseNode(node.Args[i], fmt.Sprintf("list [%d]", i), onNodeFound)
 		}
-
-	case *parse.CommentNode:
-		pp(fmt.Sprintf("comment node (%s)", prefix), node.Text)
 	}
 }
 
@@ -133,7 +115,7 @@ func structFromTemplate(structName string, t *template.Template) (Struct, error)
 		}
 
 		if sf.Name == "Props" || sf.Name == "Remaining" {
-		  return
+			return
 		}
 
 		if _, ok := fieldsMap[sf.Name]; !ok {
@@ -147,9 +129,6 @@ func structFromTemplate(structName string, t *template.Template) (Struct, error)
 	}
 
 	var imports []string
-
-	// fmt.Printf("fields: %+v\n", fields)
-	// fmt.Printf("commentsMap: %+v\n", commentsMap)
 
 	for i := range fields {
 		if sf, ok := commentsMap[fields[i].Name]; ok {
@@ -192,108 +171,6 @@ func removeParamComments(tmpl string) string {
 
 	return re.ReplaceAllString(tmpl, "")
 }
-
-// func parseTemplateString(input string, defaultStructName string) (*template.Template, string, error) {
-// 	// Parse the template
-// 	t := template.New("t:parser")
-// 	t.Funcs(template.FuncMap{
-// 		paramLabel: func(key, value string) string {
-// 			return "/* comment */"
-// 		},
-// 	})
-//
-// 	t, err := t.Parse(fixParamComments(input))
-// 	if err != nil {
-// 		return nil, "", nil
-// 	}
-//
-// 	if len(t.Templates()) == 1 {
-// 		fmt.Println("HERE................")
-// 		return parseTemplateString(strings.Join([]string{
-// 			fmt.Sprintf(`{{- define "%s" }}`, defaultStructName),
-// 			input,
-// 			`{{- end }}`,
-// 		}, "\n"), defaultStructName)
-// 	}
-//
-// 	return t, input, nil
-// }
-
-// func generateStructs(tmpl string, defaultStructName string) (fixedTemplate string, imports []string, structs []Struct, err error) {
-// 	imports = append(imports,
-// 		"github.com/go-playground/validator/v10",
-// 		"io",
-// 		"encoding/json",
-// 	)
-//
-// 	t, tmpl, err := parseTemplateString(tmpl, defaultStructName)
-//
-// 	result := make([]Struct, 0, len(t.Templates()))
-// 	for _, v := range t.Templates() {
-// 		if v.Name() == "t:parser" && len(t.Templates()) > 1 {
-// 			continue
-// 		}
-//
-// 		sname := generateStructName(v.Name())
-//
-// 		s, err := structFromTemplate(sname, v)
-// 		if err != nil {
-// 			return "", nil, nil, err
-// 		}
-// 		s.FromTemplate = v.Name()
-//
-// 		result = append(result, s)
-// 		imports = append(imports, s.Imports...)
-// 	}
-//
-// 	return tmpl, imports, result, nil
-// }
-
-// type Option struct {
-// 	TemplateType string
-// 	Input        io.Reader
-// 	Output       io.Writer
-// 	OutPkg       string
-// 	OutputDir    *string
-// }
-//
-// func Parse(opt Option) error {
-// 	if opt.Input == nil {
-// 		return fmt.Errorf("must specify option.Input")
-// 	}
-//
-// 	if opt.OutPkg == "" {
-// 		return fmt.Errorf("must specify option.OutPkg")
-// 	}
-//
-// 	if opt.Output == nil {
-// 		return fmt.Errorf("must specify option.Output")
-// 	}
-//
-// 	b, err := io.ReadAll(opt.Input)
-// 	if err != nil {
-// 		return err
-// 	}
-//
-// 	imports, structs, err := generateStructs(string(b))
-// 	if err != nil {
-// 		return err
-// 	}
-//
-// 	if opt.Output == nil {
-// 		opt.Output = os.Stdout
-// 	}
-//
-// 	if opt.OutputDir != nil {
-// 		printPackageLevelFile(*opt.OutputDir, opt.OutPkg, "html")
-// 	}
-//
-// 	if err := printOutput(opt.Output, opt.OutPkg, imports, structs); err != nil {
-// 		return err
-// 	}
-//
-// 	return nil
-// }
 
 //go:embed printer_template.go.tpl
 var outputTemplate string
@@ -351,7 +228,7 @@ func (p *Parser) ParseDir(inputDir string, outputDir string, outputPkg string, o
 	}
 
 	for _, item := range listings {
-		logger.Debug("template-parser | listings", "item", item)
+		Logger.Debug("template-parser | listings", "item", item)
 
 		input, err := os.ReadFile(filepath.Join(inputDir, item))
 		if err != nil {
@@ -383,7 +260,7 @@ func (p *Parser) ParseDir(inputDir string, outputDir string, outputPkg string, o
 
 func (p *Parser) Parse(input string, outputFile *string, outputPkg string) error {
 	parseFuncName := "parseStdout"
-	return p.parse(input, "YourStdoutStruct", parseFuncName, outputFile, outputPkg)
+	return p.parse(input, defaultStructName, parseFuncName, outputFile, outputPkg)
 }
 
 func (p *Parser) parse(input string, structName string, parseFuncName string, outputFile *string, outputPkg string, preProcess ...func(tmpl string) (string, error)) error {
@@ -393,6 +270,9 @@ func (p *Parser) parse(input string, structName string, parseFuncName string, ou
 	}
 
 	tmpl, imports, structs, err := fp.Parse()
+	if err != nil {
+		return err
+	}
 
 	// INFO: to remove @param comments, in generated file
 	// tmpl = removeParamComments(tmpl)
@@ -448,8 +328,8 @@ func NewParser(ttype TemplateType) (*Parser, error) {
 			return "'" + str[1:len(str)-1] + "'"
 		},
 
-		"lowercase": func(str string) string{
-		  return strings.ToLower(str)
+		"lowercase": func(str string) string {
+			return strings.ToLower(str)
 		},
 	}
 

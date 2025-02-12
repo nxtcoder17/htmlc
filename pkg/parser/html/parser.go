@@ -11,7 +11,6 @@ import (
 	"strings"
 	textTemplate "text/template"
 
-	"github.com/nxtcoder17/go-template/pkg/log"
 	"golang.org/x/net/html"
 	"golang.org/x/net/html/atom"
 )
@@ -21,8 +20,8 @@ var logger *slog.Logger
 var verboseDebugging bool
 
 func init() {
-	l := log.New(log.ShowCallerInfo())
-	logger = l.Slog()
+	// l := log.New(log.ShowCallerInfo())
+	logger = slog.Default()
 }
 
 func findHeadElement(n *html.Node) *html.Node {
@@ -188,9 +187,9 @@ func fixSelfClosingTags(r io.Reader) ([]byte, error) {
 }
 
 func parseHTMLAndTranspile(n *html.Node, t *template.Template, getComponent func(name string, attrs map[string]any) (Component, error)) (*html.Node, error) {
-  if verboseDebugging {
-	  logNode(":) I HAVE BEEN CALLED", n)
-  }
+	if verboseDebugging {
+		logNode(":) I HAVE BEEN CALLED", n)
+	}
 
 	var replaceNodes []*html.Node
 	onTargetNodeFound := func(n *html.Node) {
@@ -204,9 +203,9 @@ func parseHTMLAndTranspile(n *html.Node, t *template.Template, getComponent func
 	headEl := findHeadElement(n)
 
 	for _, rn := range replaceNodes {
-    if verboseDebugging {
-		  logNode(":) I HAVE to replace", rn)
-    }
+		if verboseDebugging {
+			logNode(":) I HAVE to replace", rn)
+		}
 		component, err := getComponent(rn.Data, htmlAttrsToMap(rn.Attr))
 		if err != nil {
 			return nil, err

@@ -1,0 +1,16 @@
+tasks:
+  test:parser/template:
+    watch:
+      enable: true
+      onlySuffixes:
+        - .go
+    cmd:
+      - go test -json ./pkg/parser/template/... | gotestfmt
+
+  test:parser/html:
+    watch:
+      enable: true
+      onlySuffixes:
+        - .go
+    cmd:
+      - go test -json ./pkg/parser/html/... | gotestfmt

@@ -1,6 +1,6 @@
 package html
 
-import "github.com/nxtcoder17/go-template/pkg/types"
+import "github.com/nxtcoder17/htmlc/pkg/types"
 
 // @generated with CHATGPT
 var HTMLTags = types.NewSet("a", "abbr", "address", "area", "article", "aside", "audio", "b", "base", "bdi", "bdo", "blockquote",

@@ -7,7 +7,7 @@ import (
 	"io"
 	"os"
 
-	"github.com/nxtcoder17/go-template/pkg/parser/html"
+	"github.com/nxtcoder17/htmlc/pkg/parser/html"
 )
 
 type example struct {
@@ -16,7 +16,7 @@ type example struct {
 
 // Render implements Component.
 func (e *example) Render(t *template.Template, w io.Writer) error {
-	t, err := t.Parse(`
+	t, err := template.New("sample").Parse(`
 {{ define "example" }}
 <div class="example {{.class}}">
   <span>Example</span>
