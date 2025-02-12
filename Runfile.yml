@@ -14,3 +14,7 @@ tasks:
         - .go
     cmd:
       - go test -json ./pkg/parser/html/... | gotestfmt
+
+  build:
+    cmd:
+      - go build -o ./bin/htmlc ./cmd
