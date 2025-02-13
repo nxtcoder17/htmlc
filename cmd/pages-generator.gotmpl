@@ -4,13 +4,13 @@
 {{- $output_pages_package := .output_pages_package | quote -}}
 package {{$package}}
 import (
-  html_template "github.com/nxtcoder17/go-template/pkg/parser/html"
-  template_parser "github.com/nxtcoder17/go-template/pkg/parser/template"
+  html_template "github.com/nxtcoder17/htmlc/pkg/parser/html"
+  template_parser "github.com/nxtcoder17/htmlc/pkg/parser/template"
   "os"
-  "io/fs"
   "path/filepath"
   "fmt"
   "runtime"
+  fn "github.com/nxtcoder17/htmlc/pkg/functions"
 )
 
 func dirExists(dir string) bool {
@@ -47,16 +47,14 @@ func main() {
 		return c, nil
 	}
 
-	patterns := []string{"*.html", "**/*.html"}
-
 	var listings []string
 
-	for _, pattern := range patterns {
-		list, err := fs.Glob(os.DirFS(pagesInputDir), pattern)
-		if err != nil {
-			panic(err)
-		}
-		listings = append(listings, list...)
+  patterns := []string{"*.html"}
+
+
+	listings, err := fn.RecursiveLs(pagesInputDir, patterns)
+	if err != nil {
+	  panic(err)
 	}
 
 	if len(listings) == 0 {

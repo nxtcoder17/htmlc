@@ -3,7 +3,6 @@ package template
 import (
 	_ "embed"
 	"fmt"
-	"io/fs"
 	"log/slog"
 	"os"
 	"path/filepath"
@@ -12,6 +11,8 @@ import (
 	"strings"
 	"text/template"
 	"text/template/parse"
+
+	fn "github.com/nxtcoder17/htmlc/pkg/functions"
 )
 
 var Logger *slog.Logger
@@ -202,25 +203,20 @@ func (p *Parser) ParseDir(inputDir string, outputDir string, outputPkg string, o
 	}
 
 	if opt.GlobPatterns == nil {
-		opt.GlobPatterns = []string{"*.html", "**/*.html"}
-	}
-
-	var listings []string
-
-	for _, pattern := range opt.GlobPatterns {
-		list, err := fs.Glob(os.DirFS(inputDir), pattern)
-		if err != nil {
-			panic(err)
-		}
-		listings = append(listings, list...)
+		opt.GlobPatterns = []string{"*.html"}
 	}
 
 	if err := os.MkdirAll(outputDir, 0o766); err != nil {
-		panic(err)
+		return err
+	}
+
+	listings, err := fn.RecursiveLs(inputDir, opt.GlobPatterns)
+	if err != nil {
+		return err
 	}
 
 	if len(listings) == 0 {
-		panic(fmt.Errorf("template: pattern matches no files: %#q", opt.GlobPatterns))
+		return fmt.Errorf("template: pattern matches no files: %#q", opt.GlobPatterns)
 	}
 
 	if err := p.PrintOutputPkgFile(outputDir, outputPkg); err != nil {
@@ -285,10 +281,6 @@ func (p *Parser) parse(input string, structName string, parseFuncName string, ou
 		if err != nil {
 			return err
 		}
-		// outDir := filepath.Dir(*outputFile)
-		// if err := p.PrintOutputPkgFile(outDir, outputPkg); err != nil {
-		// 	return err
-		// }
 	}
 
 	return p.PrintOutputFile(out, printOutputArgs{
