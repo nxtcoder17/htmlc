@@ -15,22 +15,20 @@ package {{ .Package }}
 {{- end}}
 
 func init() {
+  {{- if .GeneratingForComponents }}
   {{- range $structs }}
   Components[{{.Name | lowercase | quote}}] = func(attr map[string]any) (Component, error) {
-    return new{{.Name}}FromAttrs(attr)
+    return New{{.Name}}(attr)
   }
-  {{- end }}
-  {{.ParseFuncName}}(Template)
 
-  {{- /* register( */}}
-  {{- /*   {{.Name | quote }},  */}}
-  {{- /*   new{{.Name}}FromAttrs, */}}
-  {{- /*   {{$.ParseFuncName}}, */}}
-  {{- /* ) */}}
+  {{- end }}
+  {{- end }}
+  
+  {{.ParseFuncName}}()
 }
 
-func {{.ParseFuncName}}(t *template.Template) error {
-  _, err := t.Parse(`{{.InputTemplate}}`)
+func {{.ParseFuncName}}() error {
+  _, err := Template.Parse(`{{.InputTemplate}}`)
   return err
 }
 
@@ -40,10 +38,13 @@ type {{.Name}} struct {
   {{ $v.Name }} {{ $v.Type }} {{$v.Tag}}
   {{- end }}
 
+  // raw field contains all the
+  // - known attributes (i.e. those defined above this line)
+  // - and unkwnown ones (props) that are passed in html
   raw map[string]any `json:"-"`
 }
 
-func new{{.Name}}FromAttrs(attrs map[string]any) (*{{.Name}}, error) {
+func New{{.Name}}(attrs map[string]any) (*{{.Name}}, error) {
 	b, err := json.Marshal(attrs)
 	if err != nil {
 		return nil, err

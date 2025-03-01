@@ -1,0 +1,22 @@
+<!DOCTYPE html>
+<html>
+  <head>
+    <title>User Registration Page</title>
+    <ComponentHTMX />
+  </head>
+  <body class="h-screen container mx-auto flex flex-col justify-center gap-4">
+    <h2 class="text-2xl tracking-wide">
+      User Registration
+    </h2>
+    <ComponentForm hx-post="./register" hx-swap="outerHTML ignoreTitle:true" class="w-80 rounded-lg border-2 border-slate-400 p-4 flex flex-col gap-4">
+    <div class="flex flex-col gap-1">
+      <COMPONENTINPUT class="p-1" label="Email" for="email" id="email" type="text" />
+      <ComponentInput class="p-1" label="Password" for="password" id="password" type="password" />
+    </div>
+    <PrimaryButton type="submit"> Sign Up Here </PrimaryButton>
+    <div id="#post-registration"
+         class="hidden">
+    </div>
+    </ComponentForm>
+  </body>
+</html>

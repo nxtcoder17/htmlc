@@ -5,51 +5,62 @@ import (
 	_ "embed"
 	"go/format"
 	"io"
+	"log/slog"
 	"os"
 	"path/filepath"
 )
 
 type printOutputArgs struct {
-	Package       string
-	Imports       []string
-	Structs       []Struct
-	ParseFuncName string
-	InputTemplate string
+	Package                 string
+	Imports                 []string
+	Structs                 []Struct
+	ParseFuncName           string
+	InputTemplate           string
+	GeneratingForComponents bool
 }
 
-func (p *Parser) PrintOutputFile(writer io.Writer, args printOutputArgs) error {
+func (p *Parser) PrintParsedStructFile(writer io.Writer, args printOutputArgs) error {
 	b := new(bytes.Buffer)
-	if err := p.outputFileTmpl.Execute(b, args); err != nil {
+	if err := p.parsedStructFileTemplate.Execute(b, args); err != nil {
 		return err
 	}
-
-  var err error
-	_, err = writer.Write(b.Bytes())
-	return err
-
-	// formatted, err := format.Source(b.Bytes())
-	// if err != nil {
-	// 	return err
-	// }
-	//
-	// _, err = writer.Write(formatted)
-	// return err
-}
-
-func (p *Parser) PrintOutputPkgFile(dir string, pkgName string) error {
-	w, err := os.Create(filepath.Join(dir, "generated.go"))
-	if err != nil {
-		return err
-	}
-
-	b := new(bytes.Buffer)
-	p.outputPkgTmpl.Execute(w, map[string]any{
-		"package":         pkgName,
-		"template_import": p.templateImport,
-	})
 
 	formatted, err := format.Source(b.Bytes())
 	if err != nil {
+		slog.Error("while formatting generated parsed struct file", "err", err)
+		_, err := writer.Write(b.Bytes())
+		return err
+	}
+
+	_, err = writer.Write(formatted)
+	return err
+}
+
+type PrintPkgInitFileArgs struct {
+	Dir                     string
+	Package                 string
+	GeneratingForComponents bool
+}
+
+func (p *Parser) PrintPkgInitFile(args PrintPkgInitFileArgs) error {
+	w, err := os.Create(filepath.Join(args.Dir, "init.go"))
+	if err != nil {
+		return err
+	}
+
+	b := new(bytes.Buffer)
+	if err := p.parsedPkgInitFileTemplate.Execute(b, map[string]any{
+		"Package":                 args.Package,
+		"TemplateImport":          p.templateImport,
+		"GeneratingForComponents": args.GeneratingForComponents,
+	}); err != nil {
+		return err
+	}
+
+	formatted, err := format.Source(b.Bytes())
+	if err != nil {
+		slog.Error("while formatting generated pkg init file", "err", err)
+		_, err := w.Write(b.Bytes())
 		return err
 	}
 

@@ -1,0 +1,10 @@
+components:
+  - dir: ./components
+    patterns:
+      - "*.html"
+
+pages: 
+  input: "./pages"
+  output:
+    dir: "./generated/pages"
+    pkg: "pages"

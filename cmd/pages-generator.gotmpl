@@ -100,6 +100,7 @@ func main() {
 	if err := p.ParseDir(outputDir, outputDir, {{$output_pages_package}}, template_parser.ParseOptions{
 	  GlobPatterns: patterns,
 	  StructNamePrefix: &structNamePrefix,
+	  GeneratingForComponents: false,
 	}); err != nil {
 	  panic(err)
 	}

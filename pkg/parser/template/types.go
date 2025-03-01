@@ -63,11 +63,11 @@ type {{.Name}} struct {
 }
 
 type StructField struct {
-	Name    string
-	Type    string
-	Package *string
+	Name     string
+	Type     string
+	Package  *string
 	JsonName string
-	Tag     string
+	Tag      string
 }
 
 func toFieldName(str string) string {
@@ -96,7 +96,7 @@ func toFieldName(str string) string {
 func toStructField(varName, varType string) StructField {
 	fieldName := toFieldName(varName)
 
-  var tag, jsonName string
+	var tag, jsonName string
 	switch {
 	case strings.HasSuffix(varName, "?"):
 		// Optional Variable
@@ -108,9 +108,9 @@ func toStructField(varName, varType string) StructField {
 	}
 
 	return StructField{
-		Name: fieldName,
-		Type: varType,
-		Tag:  tag,
+		Name:     fieldName,
+		Type:     varType,
+		Tag:      tag,
 		JsonName: jsonName,
 	}
 }

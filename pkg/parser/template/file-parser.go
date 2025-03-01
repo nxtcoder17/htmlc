@@ -38,7 +38,7 @@ func (fp *FileParser) Parse() (parsedTmpl string, imports []string, structs []St
 	return fp.Content, imports, result, nil
 }
 
-func NewFileParser(content string, defaultStructName string, preProcess ...func(string) (string, error)) (*FileParser, error) {
+func NewFileParser(content string, defaultStructName string) (*FileParser, error) {
 	t := template.New("t:parser")
 	funcs := template.FuncMap{
 		paramLabel: func(key, value string) string {

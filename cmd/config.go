@@ -12,8 +12,8 @@ import (
 type Config struct {
 	WorkingDir string
 
-	Templates []TemplateConfig `json:"templates"`
-	Pages     Pages            `json:"pages,omitempty"`
+	Components []Components `json:"components"`
+	Pages      Pages        `json:"pages,omitempty"`
 
 	generatorDir string
 }
@@ -26,7 +26,7 @@ type Pages struct {
 	} `json:"output" validate:"required"`
 }
 
-type TemplateConfig struct {
+type Components struct {
 	Dir string `json:"dir" validate:"required"`
 
 	// Patterns must follow [guidelines](https://pkg.go.dev/path/filepath#Match)

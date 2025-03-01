@@ -173,26 +173,27 @@ func removeParamComments(tmpl string) string {
 	return re.ReplaceAllString(tmpl, "")
 }
 
-//go:embed printer_template.go.tpl
-var outputTemplate string
+//go:embed printer-parsed-struct.go.tpl
+var ParsedStructOutputTemplate string
 
-//go:embed generated_template.go.tpl
-var outputPkgTemplate string
+//go:embed printer-pkg-init.go.tpl
+var ParsedPkgInitFileTemplate string
 
 type Parser struct {
 	templateImport string
 
-	outputFileTmpl *template.Template
-	outputPkgTmpl  *template.Template
+	parsedStructFileTemplate  *template.Template
+	parsedPkgInitFileTemplate *template.Template
 
 	// allTemplates *template.Template
 	// postProcess  func(t *template.Template) (string, error)
 }
 
 type ParseOptions struct {
-	GlobPatterns     []string
-	StructNamePrefix *string
-	PreProcess       func(tmpl string) (string, error)
+	GlobPatterns            []string
+	StructNamePrefix        *string
+	PreProcess              func(tmpl string) (string, error)
+	GeneratingForComponents bool
 }
 
 func (p *Parser) ParseDir(inputDir string, outputDir string, outputPkg string, opts ...ParseOptions) error {
@@ -215,11 +216,15 @@ func (p *Parser) ParseDir(inputDir string, outputDir string, outputPkg string, o
 		return err
 	}
 
-	if len(listings) == 0 {
-		return fmt.Errorf("template: pattern matches no files: %#q", opt.GlobPatterns)
-	}
+	// if len(listings) == 0 {
+	// 	return fmt.Errorf("template: pattern matches no files: %#q", opt.GlobPatterns)
+	// }
 
-	if err := p.PrintOutputPkgFile(outputDir, outputPkg); err != nil {
+	if err := p.PrintPkgInitFile(PrintPkgInitFileArgs{
+		Dir:                     outputDir,
+		Package:                 outputPkg,
+		GeneratingForComponents: opt.GeneratingForComponents,
+	}); err != nil {
 		return err
 	}
 
@@ -246,7 +251,7 @@ func (p *Parser) ParseDir(inputDir string, outputDir string, outputPkg string, o
 			return err
 		}
 
-		if err := p.parse(string(input), defStructName, parseFuncName, &outFile, outputPkg, opt.PreProcess); err != nil {
+		if err := p.parse(string(input), defStructName, parseFuncName, &outFile, outputPkg, opt); err != nil {
 			return err
 		}
 	}
@@ -254,13 +259,13 @@ func (p *Parser) ParseDir(inputDir string, outputDir string, outputPkg string, o
 	return nil
 }
 
-func (p *Parser) Parse(input string, outputFile *string, outputPkg string) error {
+func (p *Parser) Parse(input string, outputFile *string, outputPkg string, opts ParseOptions) error {
 	parseFuncName := "parseStdout"
-	return p.parse(input, defaultStructName, parseFuncName, outputFile, outputPkg)
+	return p.parse(input, defaultStructName, parseFuncName, outputFile, outputPkg, opts)
 }
 
-func (p *Parser) parse(input string, structName string, parseFuncName string, outputFile *string, outputPkg string, preProcess ...func(tmpl string) (string, error)) error {
-	fp, err := NewFileParser(string(input), structName, preProcess...)
+func (p *Parser) parse(input string, structName string, parseFuncName string, outputFile *string, outputPkg string, opts ParseOptions) error {
+	fp, err := NewFileParser(string(input), structName)
 	if err != nil {
 		return err
 	}
@@ -283,12 +288,13 @@ func (p *Parser) parse(input string, structName string, parseFuncName string, ou
 		}
 	}
 
-	return p.PrintOutputFile(out, printOutputArgs{
-		Package:       outputPkg,
-		Imports:       imports,
-		Structs:       structs,
-		ParseFuncName: parseFuncName,
-		InputTemplate: tmpl,
+	return p.PrintParsedStructFile(out, printOutputArgs{
+		Package:                 outputPkg,
+		Imports:                 imports,
+		Structs:                 structs,
+		ParseFuncName:           parseFuncName,
+		InputTemplate:           tmpl,
+		GeneratingForComponents: opts.GeneratingForComponents,
 	})
 }
 
@@ -325,20 +331,20 @@ func NewParser(ttype TemplateType) (*Parser, error) {
 		},
 	}
 
-	t, err := template.New("parse").Funcs(funcs).Parse(outputTemplate)
+	t, err := template.New("parse").Funcs(funcs).Parse(ParsedStructOutputTemplate)
 	if err != nil {
 		return nil, err
 	}
 
-	outputPkgTmpl, err := template.New("parse").Funcs(funcs).Parse(outputPkgTemplate)
+	outputPkgTmpl, err := template.New("parse").Funcs(funcs).Parse(ParsedPkgInitFileTemplate)
 	if err != nil {
 		return nil, err
 	}
 
 	return &Parser{
-		templateImport: fmt.Sprintf("%s/template", ttype),
-		outputFileTmpl: t,
-		outputPkgTmpl:  outputPkgTmpl,
+		templateImport:            fmt.Sprintf("%s/template", ttype),
+		parsedStructFileTemplate:  t,
+		parsedPkgInitFileTemplate: outputPkgTmpl,
 		// allTemplates:   template.New("all-templates").Funcs(funcs),
 	}, nil
 }

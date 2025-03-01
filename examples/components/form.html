@@ -1,0 +1,6 @@
+{{- define "ComponentForm" }}
+<form {{.props}}
+      hx-disabled-elt="find input[type='text'], find button">
+  <Children />
+</form>
+{{- end }}

@@ -1,0 +1,16 @@
+{{- define "component/Input" }}
+{{- /* @param class? string */}}
+<div class="{{.class}} flex flex-col gap-0.5"
+     {{.props}}>
+  {{- /* @param id? string */}}
+  {{- /* @param label string */}}
+  <label for="{{.id}}"
+         class="text-sm tracking-wide text-slate-600">
+    {{.label}}
+  </label>
+  {{- /* @param type string */}}
+  <input class="border-1 rounded-lg border-slate-400 px-2 py-1"
+         id="{{.id}}"
+         type="{{.type}}" />
+</div>
+{{- end }}

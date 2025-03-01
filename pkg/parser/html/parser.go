@@ -286,5 +286,5 @@ func Parse(p Params) error {
 		return err
 	}
 
-	return html.Render(p.Output, n2)
+	return renderHTML(p.Output, n2)
 }

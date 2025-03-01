@@ -38,6 +38,7 @@
           ];
 
           shellHook = ''
+            export PATH="$PWD/bin:$PATH"
           '';
         };
       }

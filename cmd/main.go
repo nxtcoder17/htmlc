@@ -4,6 +4,8 @@ import (
 	_ "embed"
 	"flag"
 	"fmt"
+	"io/fs"
+	"log/slog"
 	"os"
 	"os/exec"
 	"path/filepath"
@@ -11,6 +13,7 @@ import (
 	"strings"
 	"text/template"
 
+	"github.com/nxtcoder17/htmlc/examples"
 	template_parser "github.com/nxtcoder17/htmlc/pkg/parser/template"
 )
 
@@ -42,9 +45,9 @@ func sanitizeConfig(cfg *Config) {
 		cfg.generatorDir = filepath.Join(cfg.WorkingDir, cfg.generatorDir)
 	}
 
-	for i := range cfg.Templates {
-		if !isAbs(cfg.Templates[i].Dir) {
-			cfg.Templates[i].Dir = filepath.Join(cfg.WorkingDir, cfg.Templates[i].Dir)
+	for i := range cfg.Components {
+		if !isAbs(cfg.Components[i].Dir) {
+			cfg.Components[i].Dir = filepath.Join(cfg.WorkingDir, cfg.Components[i].Dir)
 		}
 	}
 }
@@ -64,9 +67,10 @@ func generator(cfg *Config) error {
 	}
 
 	// First Sweep
-	for _, tc := range cfg.Templates {
+	for _, tc := range cfg.Components {
 		if err := p.ParseDir(tc.Dir, cfg.generatorDir, "main", template_parser.ParseOptions{
-			GlobPatterns: tc.Patterns,
+			GlobPatterns:            tc.Patterns,
+			GeneratingForComponents: true,
 		}); err != nil {
 			return err
 		}
@@ -145,17 +149,69 @@ func generatePagesFile(cfg *Config) error {
 
 var debug bool
 
+func showHelp() {
+	fmt.Println("must specify, one command at least [init|generate]")
+}
+
+func pathExists(p string) bool {
+	_, err := os.Stat(p)
+	return err == nil
+}
+
+func subCommandInit() error {
+	if pathExists("htmlc.yml") || pathExists("components") || pathExists("pages") {
+		return fmt.Errorf("htmlc is already initialized as htmlc.yml file, components, or pages directory already exists")
+	}
+
+	return fs.WalkDir(examples.ExamplesFS, ".", func(path string, d fs.DirEntry, err error) error {
+		if err != nil {
+			return err
+		}
+		if d.IsDir() {
+			if err := os.MkdirAll(path, 0o755); err != nil {
+				return err
+			}
+			return nil
+		}
+		b, err := fs.ReadFile(examples.ExamplesFS, path)
+		if err != nil {
+			return err
+		}
+
+		return os.WriteFile(path, b, 0o644)
+	})
+}
+
 func main() {
 	f := flag.String("config", "htmlc.yml", "--config")
 	flag.BoolVar(&debug, "debug", false, "--debug")
 	flag.Parse()
 
-	c, err := ConfigFromFile(*f)
-	if err != nil {
-		panic(err)
+	if len(flag.CommandLine.Args()) == 0 {
+		showHelp()
+		os.Exit(1)
 	}
 
-	if err := generator(c); err != nil {
-		panic(err)
+	cmd := flag.CommandLine.Arg(0)
+
+	switch cmd {
+	case "init":
+		{
+			if err := subCommandInit(); err != nil {
+				slog.Error("failed to execute `init`", "err", err)
+				os.Exit(1)
+			}
+		}
+	case "generate":
+		{
+			c, err := ConfigFromFile(*f)
+			if err != nil {
+				panic(err)
+			}
+
+			if err := generator(c); err != nil {
+				panic(err)
+			}
+		}
 	}
 }
