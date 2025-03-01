@@ -15,6 +15,12 @@ tasks:
     cmd:
       - go test -json ./pkg/parser/html/... | gotestfmt
 
-  build:
+  build:debug:
     cmd:
-      - go build -o ./bin/htmlc ./cmd
+      - go build -x -o ./bin/htmlc ./cmd
+
+  build:
+    env:
+      CGO_ENABLED: 0
+    cmd:
+      - go build -ldflags="-s -w" -o ./bin/htmlc ./cmd

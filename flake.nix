@@ -21,8 +21,8 @@
               name = "run";
               pname = "run";
               src = fetchurl {
-                url = "https://github.com/nxtcoder17/Runfile/releases/download/v1.3.0/run-linux-amd64";
-                sha256 = "sha256-moXwJ8p0VZm9u5lAzWW63pqvsUnCiS268lCyntuxuHo=";
+                url = "https://github.com/nxtcoder17/Runfile/releases/download/v1.4.2/run-linux-amd64";
+                sha256 = "sha256-IkyICC4GF0b9vQa1UxvZt4kyyQ2fAHGKs61dg3zq35A=";
               };
               unpackPhase = ":";
               installPhase = ''
@@ -33,7 +33,7 @@
             })
 
             # your packages here
-            go
+            go_1_22
             gotestfmt
           ];
 

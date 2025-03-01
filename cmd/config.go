@@ -27,7 +27,10 @@ type Pages struct {
 }
 
 type TemplateConfig struct {
-	Dir      string   `json:"dir" validate:"required"`
+	Dir string `json:"dir" validate:"required"`
+
+	// Patterns must follow [guidelines](https://pkg.go.dev/path/filepath#Match)
+	// htmlc does recursive matching of patterns
 	Patterns []string `json:"patterns"`
 }
 
