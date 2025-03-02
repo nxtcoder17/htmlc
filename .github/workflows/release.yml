@@ -1,0 +1,128 @@
+name: Release htmlc Binaries
+
+on:
+  workflow_dispatch:
+
+  push:
+    tags:
+      - 'v*'
+
+    branches:
+      - master
+
+    paths:
+      - "cmd/**"
+      - ".github/**"
+      - "examples/**"
+      - "pkg/**"
+      - go.* # go.mod, and go.sum
+      - flake.*
+
+permissions:
+  contents: write
+  packages: write
+
+jobs:
+  build-binary:
+    strategy:
+      fail-fast: true
+      matrix:
+        os:
+          - linux
+          - darwin
+          - windows
+        arch:
+          - amd64
+          - arm64
+        # exclude:
+        #   - os: darwin
+        #     arch: amd64
+
+    name: Building htmlc-${{ matrix.os }}-${{ matrix.arch }}
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: nxtcoder17/actions/setup-cache-go@v1
+        with:
+          cache_key: "htmlc-${{ matrix.platform }}-${{ matrix.arch }}"
+          working_directory: .
+
+      - uses: nxtcoder17/actions/setup-nix-github@v1
+        with:
+          flake_lock: "./flake.lock"
+          nix_develop_arguments: ".#default"
+
+      - name: Build Binary
+        shell: bash
+        env:
+          CGO_ENABLED: 0
+          GOOS: ${{ matrix.os }}
+          GOARCH: ${{ matrix.arch }}
+        run: |+
+          binary=bin/htmlc-${{ matrix.os }}-${{ matrix.arch }}
+          go build -o $binary -ldflags="-s -w" ./cmd
+          sha256sum $binary > $binary.sha256
+
+      - name: Upload Artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: htmlc-${{ matrix.os }}-${{ matrix.arch }}
+          path: bin/*
+
+  release:
+    needs: build-binary
+    runs-on: ubuntu-latest
+    steps:
+      - name: Download all artifacts
+        uses: actions/download-artifact@v4
+        with:
+          path: ${{ github.workspace }}/binaries
+          pattern: "htmlc-*"
+
+      - name: flattening all the executable artifacts
+        shell: bash
+        run: |+
+          ls -R ${{ github.workspace }}/binaries
+          mkdir -p  ${{ github.workspace }}/upload/binaries
+          shopt -s globstar
+          file ./** | grep -iE 'executable,|ASCII text' | awk -F: '{print $1}' | xargs -I {} cp {} ${{ github.workspace }}/upload/binaries
+          shopt -u globstar
+
+      - uses: nxtcoder17/actions/generate-image-tag@v1
+
+      - name: running for master branch
+        if: startsWith(github.ref, 'refs/heads/master')
+        run: |+
+          echo "IMAGE_TAG=nightly" | tee -a $GITHUB_ENV
+
+      - name: ensure github release exists
+        shell: bash
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |+
+          set +e
+          gh release list -R ${{ github.repository }} | grep -i "$IMAGE_TAG"
+          exit_code=$?
+          if [ $exit_code -ne 0 ]; then
+            gh release create $IMAGE_TAG -R ${{ github.repository }} --generate-notes --prerelease --draft=false
+          fi
+
+      - name: upload to github release
+        shell: bash
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |+
+          extra_args=""
+          if [[ "$IMAGE_TAG" =~ nightly.* ]]; then
+            extra_args="--clobber"
+          fi
+          gh release upload $IMAGE_TAG -R ${{github.repository}} $extra_args ${{github.workspace}}/upload/binaries/*
+
+      - name: mark release as latest
+        if: startsWith(github.ref, 'refs/tags/')
+        env:
+          GH_TOKEN: ${{ github.token }}
+        shell: bash
+        run: |+
+          gh release edit $IMAGE_TAG -R ${{ github.repository }} --latest
