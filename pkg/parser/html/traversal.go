@@ -21,7 +21,7 @@ func getFilteredChildren(n *html.Node) []*html.Node {
 	var result []*html.Node
 	for c := n.FirstChild; c != nil; c = c.NextSibling {
 		if strings.TrimSpace(c.Data) == "" {
-			// INFO: omiting empty node
+			// INFO: omitting empty node
 			continue
 		}
 		result = append(result, c)
@@ -34,7 +34,7 @@ func filterChildren(nodes []*html.Node) []*html.Node {
 	var result []*html.Node
 	for _, c := range nodes {
 		if strings.TrimSpace(c.Data) == "" {
-			// INFO: omiting empty node
+			// INFO: omitting empty node
 			continue
 		}
 		result = append(result, c)
