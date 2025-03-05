@@ -184,9 +184,6 @@ type Parser struct {
 
 	parsedStructFileTemplate  *template.Template
 	parsedPkgInitFileTemplate *template.Template
-
-	// allTemplates *template.Template
-	// postProcess  func(t *template.Template) (string, error)
 }
 
 type ParseOptions struct {
