@@ -7,7 +7,6 @@ import (
 	"golang.org/x/net/html"
 )
 
-
 func nodePrinter(n *html.Node, withChildren bool) (string, []string) {
 	if n == nil {
 		panic("called with nil node")
@@ -18,7 +17,7 @@ func nodePrinter(n *html.Node, withChildren bool) (string, []string) {
 		attrs = append(attrs, fmt.Sprintf("%s=%s", attr.Key, attr.Val))
 	}
 
-	children := getChildren(n)
+	children := getFilteredChildren(n)
 	childrenMsg := make([]string, 0, len(children))
 	if withChildren {
 		for _, child := range children {

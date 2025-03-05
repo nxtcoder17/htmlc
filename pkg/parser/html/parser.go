@@ -2,6 +2,7 @@ package html
 
 import (
 	"bytes"
+	"errors"
 	"fmt"
 	"html/template"
 	"io"
@@ -25,6 +26,10 @@ func init() {
 }
 
 func findHeadElement(n *html.Node) *html.Node {
+	if n == nil {
+		return nil
+	}
+
 	if n.Type == html.ElementNode {
 		logger.Debug("find HEAD element", "type", n.Type, "data", n.Data, "attr", n.Attr, "data-atom", n.DataAtom)
 		switch n.Data {
@@ -61,6 +66,10 @@ func findChildrenPlaceholderNode(n *html.Node) *html.Node {
 }
 
 func parseHTML(n *html.Node, onTargetNodeFound func(node *html.Node)) error {
+	if n == nil {
+		return nil
+	}
+
 	if n.DataAtom == atom.Svg {
 		return nil
 	}
@@ -73,6 +82,7 @@ func parseHTML(n *html.Node, onTargetNodeFound func(node *html.Node)) error {
 		}
 	}
 
+	// 			fmt.Println("ERR", err, "path", path)
 	// Recursively process child nodes
 	for c := n.FirstChild; c != nil; c = c.NextSibling {
 		parseHTML(c, onTargetNodeFound)
@@ -123,14 +133,16 @@ func parseWithFragments(reader io.Reader) (*html.Node, error) {
 		return nil, err
 	}
 
+	nl = filterChildren(nl)
+
 	if len(nl) != 2 {
-		return nil, err
+		return nil, errors.Join(fmt.Errorf("failed while parsing fragment"), err)
 	}
 
 	head, body := nl[0], nl[1]
 
-	headChildren := getChildren(head)
-	bodyChildren := getChildren(body)
+	headChildren := getFilteredChildren(head)
+	bodyChildren := getFilteredChildren(body)
 
 	switch {
 	case len(headChildren) > 0 && len(bodyChildren) > 0:
