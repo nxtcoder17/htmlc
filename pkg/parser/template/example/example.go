@@ -24,7 +24,7 @@ func main() {
 		panic(err)
 	}
 
-	if err := p.Parse(in, nil, outpkg); err != nil {
+	if err := p.Parse(in, nil, outpkg, template.ParseOptions{}); err != nil {
 		panic(err)
 	}
 }

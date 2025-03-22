@@ -21,8 +21,8 @@
               name = "run";
               pname = "run";
               src = fetchurl {
-                url = "https://github.com/nxtcoder17/Runfile/releases/download/v1.4.2/run-linux-amd64";
-                sha256 = "sha256-IkyICC4GF0b9vQa1UxvZt4kyyQ2fAHGKs61dg3zq35A=";
+                url = "https://github.com/nxtcoder17/Runfile/releases/download/v1.5.0/run-linux-amd64";
+                sha256 = "sha256-ATs4V24iR1RGrFWAK/Vp0zFD6R/QTuVCu/f9gtB8hvw=";
               };
               unpackPhase = ":";
               installPhase = ''

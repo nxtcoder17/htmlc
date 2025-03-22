@@ -94,9 +94,14 @@ func parseNode(p parse.Node, prefix string, onNodeFound func(sf StructField, isC
 		}
 
 	case *parse.CommandNode:
-		fmt.Println("command-node", node.String())
+		Logger.Debug("command-node", "node", node.String())
 		for i := range node.Args {
 			parseNode(node.Args[i], fmt.Sprintf("list [%d]", i), onNodeFound)
+		}
+	case *parse.RangeNode:
+		Logger.Debug("range-node", "node", node.String(), "struct", fmt.Sprintf("%+v", *node.Pipe))
+		for i := range node.Pipe.Cmds {
+			parseNode(node.Pipe.Cmds[i], "range-node", onNodeFound)
 		}
 	}
 }
@@ -156,20 +161,10 @@ func structFromTemplate(structName string, t *template.Template) (Struct, error)
 var re = regexp.MustCompile(`{{-?\s*/\*\s* @param \s*(.*) \s*(.*) ()\*/}}`)
 
 func fixParamComments(tmpl string) string {
-	// matches := re.FindAllStringSubmatch(tmpl, -1)
-	// for _, m := range matches {
-	// 	fmt.Printf("item (%s, %s)\n", m[1], m[2])
-	// }
-
 	return re.ReplaceAllString(tmpl, fmt.Sprintf(`{{- %s "$1" "$2" -}}`, paramLabel))
 }
 
 func removeParamComments(tmpl string) string {
-	// matches := re.FindAllStringSubmatch(tmpl, -1)
-	// for _, m := range matches {
-	// 	fmt.Printf("item (%s, %s)\n", m[1], m[2])
-	// }
-
 	return re.ReplaceAllString(tmpl, "")
 }
 
