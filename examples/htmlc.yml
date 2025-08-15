@@ -8,3 +8,4 @@ pages:
   output:
     dir: "./generated/pages"
     pkg: "pages"
+    go: true

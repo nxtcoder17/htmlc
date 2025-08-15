@@ -4,6 +4,8 @@ go 1.21
 
 require (
 	github.com/go-playground/validator/v10 v10.24.0
+	github.com/nxtcoder17/fastlog v0.0.0-20250814133635-62402a0f0354
+	github.com/spf13/pflag v1.0.7
 	golang.org/x/net v0.34.0
 	sigs.k8s.io/yaml v1.4.0
 )

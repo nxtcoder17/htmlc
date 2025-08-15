@@ -3,6 +3,7 @@ package template
 import (
 	"bytes"
 	"fmt"
+	"log/slog"
 	"strconv"
 	"strings"
 	"text/template"
@@ -94,6 +95,7 @@ func toFieldName(str string) string {
 }
 
 func toStructField(varName, varType string) StructField {
+	slog.Debug("TO STRUCT FIELD", "varname", varName)
 	fieldName := toFieldName(varName)
 
 	var tag, jsonName string

@@ -2,34 +2,25 @@ package main
 
 import (
 	_ "embed"
-	"flag"
+	"errors"
+	flag "github.com/spf13/pflag"
 	"fmt"
 	"io/fs"
 	"log/slog"
 	"os"
 	"os/exec"
 	"path/filepath"
-	"strconv"
-	"strings"
-	"text/template"
 
+	"github.com/nxtcoder17/htmlc/cmd/templates"
 	"github.com/nxtcoder17/htmlc/examples"
 	template_parser "github.com/nxtcoder17/htmlc/pkg/parser/template"
+
+	"github.com/nxtcoder17/fastlog"
 )
 
 func isAbs(p string) bool {
 	abs, _ := filepath.Abs(p)
 	return abs == p
-}
-
-func findGoModFile() (string, error) {
-	out, err := exec.Command("go", "env", "GOMOD").Output()
-	if err != nil {
-		fmt.Println("Error:", err)
-		return "", err
-	}
-
-	return filepath.Clean(string(out)), nil
 }
 
 func sanitizeConfig(cfg *Config) {
@@ -52,19 +43,20 @@ func sanitizeConfig(cfg *Config) {
 	}
 }
 
-//go:embed pages-generator.gotmpl
-var pagesGenerator string
-
-//go:embed pages-route.go.tpl
-var pagesRouter string
+//go:embed templates/pages-generator.gotmpl
+var generatorGoCode string
 
 func generator(cfg *Config) error {
 	sanitizeConfig(cfg)
+
+	slog.Debug("HERE")
 
 	p, err := template_parser.NewParser(template_parser.Html)
 	if err != nil {
 		return err
 	}
+
+	slog.Debug("parsing components directory")
 
 	// First Sweep
 	for _, tc := range cfg.Components {
@@ -76,6 +68,7 @@ func generator(cfg *Config) error {
 		}
 	}
 
+	slog.Info("generating pages")
 	if err := generatePagesFile(cfg); err != nil {
 		return err
 	}
@@ -83,8 +76,10 @@ func generator(cfg *Config) error {
 	return executor(cfg)
 }
 
-func executor(cfg *Config) error {
-	b, err := exec.Command("go", "run", cfg.generatorDir).CombinedOutput()
+func executeCmd(cfg *Config, command string, args ...string) error {
+	c := exec.Command(command, args...)
+	c.Dir = cfg.generatorDir
+	b, err := c.CombinedOutput()
 	if err != nil {
 		if exerr, ok := err.(*exec.ExitError); ok && exerr.ExitCode() != 0 {
 			fmt.Printf("%s\n", b)
@@ -96,7 +91,30 @@ func executor(cfg *Config) error {
 		fmt.Printf("%s\n", b)
 	}
 
+	return nil
+}
+
+func executor(cfg *Config) error {
+	if _, err := os.Stat(filepath.Join(cfg.generatorDir, "go.mod")); err != nil && errors.Is(err, os.ErrNotExist) {
+		if err := executeCmd(cfg, "go", "mod", "init", "github.com/nxtcoder17/htmlc.cli"); err != nil {
+			return err
+		}
+	}
+
+	if err := executeCmd(cfg, "go", "get", "github.com/nxtcoder17/htmlc@"+Version); err != nil {
+		return err
+	}
+
+	if err := executeCmd(cfg, "go", "mod", "tidy"); err != nil {
+		return err
+	}
+
+	if err := executeCmd(cfg, "go", "run", "./"); err != nil {
+		return err
+	}
+
 	if !debug {
+		slog.Debug("HERE, deleting generator directory", "debug", debug)
 		if err := os.RemoveAll(cfg.generatorDir); err != nil {
 			return err
 		}
@@ -106,48 +124,35 @@ func executor(cfg *Config) error {
 }
 
 func generatePagesFile(cfg *Config) error {
-	t := template.New("pages-generator").Funcs(template.FuncMap{
-		"indent": func(indent int, str string) string {
-			return strings.Repeat(" ", indent) + str
-		},
-		"trim": func(str string) string {
-			return strings.TrimSpace(str)
-		},
-		"quote": func(str string) string {
-			return strconv.Quote(str)
-		},
-
-		"squote": func(str string) string {
-			str = strconv.Quote(str)
-			return "'" + str[1:len(str)-1] + "'"
-		},
-	})
-
-	t, err := t.Parse(pagesGenerator)
-	if err != nil {
-		return err
-	}
-
 	rel, err := filepath.Rel(cfg.generatorDir, cfg.Pages.Input)
 	if err != nil {
-		panic(err)
-	}
-
-	out, err := os.Create(filepath.Join(cfg.generatorDir, "pages_generator.go"))
-	if err != nil {
 		return err
 	}
 
-	return t.ExecuteTemplate(out, t.Name(), map[string]any{
+	b2, err := templates.ParseBytes([]byte(generatorGoCode), map[string]any{
 		"package":         "main",
 		"input_pages_dir": rel,
 
 		"output_pages_dir":     cfg.Pages.Output.Dir,
 		"output_pages_package": cfg.Pages.Output.Package,
+
+		"gen_go_code": cfg.Pages.Output.Go,
 	})
+	if err != nil {
+		return err
+	}
+
+	if err := os.WriteFile(filepath.Join(cfg.generatorDir, "generator.go"), b2, 0o644); err != nil {
+		return err
+	}
+
+	return nil
 }
 
-var debug bool
+var (
+	debug   bool
+	Version string
+)
 
 func showHelp() {
 	fmt.Println("must specify, one command at least [init|generate]")
@@ -160,7 +165,7 @@ func pathExists(p string) bool {
 
 func subCommandInit() error {
 	if pathExists("htmlc.yml") || pathExists("components") || pathExists("pages") {
-		return fmt.Errorf("htmlc is already initialized as htmlc.yml file, components, or pages directory already exists")
+		return fmt.Errorf("htmlc is already initialized as htmlc.yml | components | pages directory already exists")
 	}
 
 	return fs.WalkDir(examples.ExamplesFS, ".", func(path string, d fs.DirEntry, err error) error {
@@ -187,6 +192,10 @@ func main() {
 	flag.BoolVar(&debug, "debug", false, "--debug")
 	flag.Parse()
 
+	fmt.Println("DEBUG", debug)
+	logger := fastlog.New(fastlog.WithoutTimestamp(), fastlog.ShowDebugLogs(debug))
+	slog.SetDefault(logger.Slog())
+
 	if len(flag.CommandLine.Args()) == 0 {
 		showHelp()
 		os.Exit(1)
@@ -210,7 +219,8 @@ func main() {
 			}
 
 			if err := generator(c); err != nil {
-				panic(err)
+				logger.Error("failed to generate pages, got", "err", err)
+				os.Exit(1)
 			}
 		}
 	}

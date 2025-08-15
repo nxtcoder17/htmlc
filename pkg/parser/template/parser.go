@@ -15,22 +15,22 @@ import (
 	fn "github.com/nxtcoder17/htmlc/pkg/functions"
 )
 
-var Logger *slog.Logger
-
-func init() {
-	Logger = slog.Default()
-}
-
 const paramLabel string = "__param__"
 
 var defaultStructName = "YourStdoutStruct"
 
 func parseNode(p parse.Node, prefix string, onNodeFound func(sf StructField, isComment bool)) {
+	if p == nil {
+		return
+	}
+
 	switch node := p.(type) {
 	case *parse.IdentifierNode:
 		{
-			onNodeFound(toStructField(node.String(), "any"), false)
-			Logger.Debug("identifier node", "prefix", prefix, "node", node.String())
+			slog.Debug("identifier node", "prefix", prefix, "node", node.String())
+			// INFO: IdentifierNode is always a function like go-template builtin's like `eq`, `or`, `and`, `not` etc
+			// No need to parse it, any further
+			// onNodeFound(toStructField(node.String(), "any"), false)
 		}
 
 	// CASE: .Variable
@@ -39,15 +39,24 @@ func parseNode(p parse.Node, prefix string, onNodeFound func(sf StructField, isC
 			for _, v := range node.Ident {
 				onNodeFound(toStructField(v, "any"), false)
 			}
-			Logger.Debug("field node", "prefix", prefix, "node", node.String())
+			slog.Debug("field node", "prefix", prefix, "node", node.String())
 		}
 
 	// CASE: {{.Variable}}
 	case *parse.ActionNode:
 		{
-			Logger.Debug("action node", "prefix", prefix, "node", node.Pipe.String())
+			slog.Debug("action node", "prefix", prefix, "node", node.Pipe.String())
+
+			if node.Pipe == nil {
+				return
+			}
+
+			if node.Pipe.IsAssign {
+				slog.Debug("is being assigned", "node", node.Pipe.String())
+			}
+
 			for _, c := range node.Pipe.Cmds {
-				Logger.Debug("got comment", "c.Args", c.Args)
+				slog.Debug("got comment", "c.Args", c.Args)
 
 				if len(c.Args) >= 3 && c.Args[0].String() == paramLabel {
 					// INFO: it is our param comment
@@ -66,7 +75,7 @@ func parseNode(p parse.Node, prefix string, onNodeFound func(sf StructField, isC
 				}
 
 				for idx, ci := range c.Args {
-					Logger.Debug(fmt.Sprintf("cmds[%d]", idx), "type", ci.Type(), "cmd", ci.String())
+					slog.Debug(fmt.Sprintf("cmds[%d]", idx), "type", ci.Type(), "cmd", ci.String())
 					parseNode(ci, fmt.Sprintf("cmds[%d]", idx), onNodeFound)
 				}
 			}
@@ -78,7 +87,11 @@ func parseNode(p parse.Node, prefix string, onNodeFound func(sf StructField, isC
 		}
 	case *parse.IfNode:
 		{
-			Logger.Debug("if node", "prefix", prefix, "node", node.String(), "pipe", node.Pipe.Cmds)
+			if node.Pipe == nil {
+				return
+			}
+
+			slog.Debug("if node", "prefix", prefix, "node", node.String(), "pipe", node.Pipe.Cmds)
 
 			for i := range node.Pipe.Cmds {
 				parseNode(node.Pipe.Cmds[i], prefix, onNodeFound)
@@ -88,18 +101,25 @@ func parseNode(p parse.Node, prefix string, onNodeFound func(sf StructField, isC
 			parseNode(node.ElseList, "else", onNodeFound)
 		}
 	case *parse.ListNode:
-		Logger.Debug("list node", "prefix", prefix, "node", node.String())
+		if node == nil {
+			return
+		}
+		slog.Debug("list node", "prefix", prefix, "node", node)
 		for i := range node.Nodes {
 			parseNode(node.Nodes[i], fmt.Sprintf("list [%d]", i), onNodeFound)
 		}
 
 	case *parse.CommandNode:
-		Logger.Debug("command-node", "node", node.String())
+		slog.Debug("command-node", "node", node.String())
 		for i := range node.Args {
 			parseNode(node.Args[i], fmt.Sprintf("list [%d]", i), onNodeFound)
 		}
 	case *parse.RangeNode:
-		Logger.Debug("range-node", "node", node.String(), "struct", fmt.Sprintf("%+v", *node.Pipe))
+		if node.Pipe == nil {
+			return
+		}
+
+		slog.Debug("range-node", "node", node.String(), "struct", fmt.Sprintf("%+v", *node.Pipe))
 		for i := range node.Pipe.Cmds {
 			parseNode(node.Pipe.Cmds[i], "range-node", onNodeFound)
 		}
@@ -158,10 +178,30 @@ func structFromTemplate(structName string, t *template.Template) (Struct, error)
 	}, nil
 }
 
-var re = regexp.MustCompile(`{{-?\s*/\*\s* @param \s*(.*) \s*(.*) ()\*/}}`)
+var re = func() *regexp.Regexp {
+	// old := regexp.MustCompile(`{{-?\s*/\*\s* @param \s*(\w*) \s*((\w|\[\]|_)+).*\*/}}`)
+	return regexp.MustCompile(
+		// comment start
+		`{{-?\s*[/][*]\s*` +
+			// param keyword
+			" @param " +
+			// var name
+			`\s*(\w+)` +
+			// var type
+			// 		\w: could be a alphanumeric character
+			// 		\[,\]: could be an array type
+			// 		[*]: could be a pointer type
+			`\s*((\w|\[\]|[*])+)` +
+
+			// comment end
+			`.*[*][/].*}}`,
+	)
+}()
 
 func fixParamComments(tmpl string) string {
-	return re.ReplaceAllString(tmpl, fmt.Sprintf(`{{- %s "$1" "$2" -}}`, paramLabel))
+	result := re.ReplaceAllString(tmpl, fmt.Sprintf(`{{- %s "$1" "$2" -}}`, paramLabel))
+	slog.Debug("POST PARAM REPLACEMENT", "component", result)
+	return result
 }
 
 func removeParamComments(tmpl string) string {
@@ -208,10 +248,6 @@ func (p *Parser) ParseDir(inputDir string, outputDir string, outputPkg string, o
 		return err
 	}
 
-	// if len(listings) == 0 {
-	// 	return fmt.Errorf("template: pattern matches no files: %#q", opt.GlobPatterns)
-	// }
-
 	if err := p.PrintPkgInitFile(PrintPkgInitFileArgs{
 		Dir:                     outputDir,
 		Package:                 outputPkg,
@@ -221,7 +257,7 @@ func (p *Parser) ParseDir(inputDir string, outputDir string, outputPkg string, o
 	}
 
 	for _, item := range listings {
-		Logger.Debug("template-parser | listings", "item", item)
+		slog.Debug("template-parser | listings", "item", item)
 
 		input, err := os.ReadFile(filepath.Join(inputDir, item))
 		if err != nil {

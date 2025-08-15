@@ -181,6 +181,28 @@ Greeting: {{.Greeting}}
 			},
 			wantErr: false,
 		},
+		{
+			name: "7. if block with go template inbuilt functions",
+			args: args{
+				tmpl: /*gotmpl*/ `
+					{{ define "Sample" }}
+					{{- /* @param name string */}}
+					{{- if eq "sample" .name }}
+					Hello SAMPLE, You Matched!
+					{{- end }}
+					{{- end }}
+		`,
+			},
+			want: []Struct{
+				{
+					Name: "Sample",
+					Fields: []StructField{
+						{Name: "Name", Type: "string"},
+					},
+				},
+			},
+			wantErr: false,
+		},
 	}
 	for _idx, tt := range tests {
 		idx := _idx + 1
