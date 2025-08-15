@@ -3,13 +3,14 @@ package main
 import (
 	_ "embed"
 	"errors"
-	flag "github.com/spf13/pflag"
 	"fmt"
 	"io/fs"
 	"log/slog"
 	"os"
 	"os/exec"
 	"path/filepath"
+
+	flag "github.com/spf13/pflag"
 
 	"github.com/nxtcoder17/htmlc/cmd/templates"
 	"github.com/nxtcoder17/htmlc/examples"
@@ -48,8 +49,6 @@ var generatorGoCode string
 
 func generator(cfg *Config) error {
 	sanitizeConfig(cfg)
-
-	slog.Debug("HERE")
 
 	p, err := template_parser.NewParser(template_parser.Html)
 	if err != nil {
@@ -155,7 +154,7 @@ var (
 )
 
 func showHelp() {
-	fmt.Println("must specify, one command at least [init|generate]")
+	fmt.Println("must specify, one command [init|generate]")
 }
 
 func pathExists(p string) bool {
@@ -192,7 +191,6 @@ func main() {
 	flag.BoolVar(&debug, "debug", false, "--debug")
 	flag.Parse()
 
-	fmt.Println("DEBUG", debug)
 	logger := fastlog.New(fastlog.WithoutTimestamp(), fastlog.ShowDebugLogs(debug))
 	slog.SetDefault(logger.Slog())
 
