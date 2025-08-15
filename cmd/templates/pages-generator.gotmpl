@@ -2,6 +2,7 @@
 {{- $input_pages_dir := .input_pages_dir | quote -}}
 {{- $output_pages_dir := .output_pages_dir | quote -}}
 {{- $output_pages_package := .output_pages_package | quote -}}
+{{- $gen_go_code := .gen_go_code -}}
 package {{$package}}
 import (
   html_template "github.com/nxtcoder17/htmlc/pkg/parser/html"
@@ -91,17 +92,20 @@ func main() {
 		}
 	}
 
-	p, err := template_parser.NewParser(template_parser.Html)
-	if err != nil {
-	  panic(err)
-	}
+  if {{ $gen_go_code }} {
+	  p, err := template_parser.NewParser(template_parser.Html)
+	  if err != nil {
+	    panic(err)
+	  }
 
-	structNamePrefix := "page"
-	if err := p.ParseDir(outputDir, outputDir, {{$output_pages_package}}, template_parser.ParseOptions{
-	  GlobPatterns: patterns,
-	  StructNamePrefix: &structNamePrefix,
-	  GeneratingForComponents: false,
-	}); err != nil {
-	  panic(err)
-	}
+	  structNamePrefix := "page"
+	  if err := p.ParseDir(outputDir, outputDir, {{$output_pages_package}}, template_parser.ParseOptions{
+	    GlobPatterns: patterns,
+	    StructNamePrefix: &structNamePrefix,
+	    GeneratingForComponents: false,
+	  }); err != nil {
+	    panic(err)
+	  }
+  }
 }
+

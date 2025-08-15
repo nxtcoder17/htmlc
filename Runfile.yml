@@ -23,4 +23,9 @@ tasks:
     env:
       CGO_ENABLED: 0
     cmd:
-      - go build -ldflags="-s -w" -o ./bin/htmlc ./cmd
+      - go build -ldflags="-s -w -X main.Version=v1.1.1" -o ./bin/htmlc ./cmd
+
+  local:install:
+    cmd:
+      - run: build
+      - ln -sf $PWD/bin/htmlc ~/.local/bin/htmlc

@@ -23,6 +23,7 @@ type Pages struct {
 	Output struct {
 		Package string `json:"pkg" validate:"required"`
 		Dir     string `json:"dir" validate:"required"`
+		Go      bool   `json:"go,omitempty"`
 	} `json:"output" validate:"required"`
 }
 

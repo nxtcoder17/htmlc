@@ -7,6 +7,7 @@ package {{ .Package }}
 {{- "import ("}}
 "fmt"
 "strings"
+"github.com/mitchellh/mapstructure"
 {{- range $imports }}
 {{ . | quote | indent 2 }}
 {{- end }}
@@ -45,16 +46,23 @@ type {{.Name}} struct {
 }
 
 func New{{.Name}}(attrs map[string]any) (*{{.Name}}, error) {
-	b, err := json.Marshal(attrs)
-	if err != nil {
-		return nil, err
-	}
-
 	var s {{.Name}}
 
-	if err := json.Unmarshal(b, &s); err != nil {
-		return nil, err
-	}
+  decoderCfg := &mapstructure.DecoderConfig{
+    WeaklyTypedInput: true,
+    Result:           &s,
+    TagName:          "json",
+  }
+
+	decoder, _ := mapstructure.NewDecoder(decoderCfg)
+  if err := decoder.Decode(attrs); err != nil {
+    panic(err)
+  }
+
+  validate := validator.New()
+  if err := validate.Struct(s); err != nil {
+    fmt.Println("Validation failed:", err)
+  } 
 
 	known := map[string]any{
     {{- range $v := .Fields }}
@@ -115,3 +123,4 @@ func (n *{{.Name}}) Render(w io.Writer) error {
 }
 
 {{- end }}
+

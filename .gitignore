@@ -1,3 +1,4 @@
 .direnv
 bin/
 examples/generated
+tags
